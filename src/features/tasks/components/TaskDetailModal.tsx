@@ -53,7 +53,7 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
               background: 'rgba(255,255,255,0.15)', padding: '0.25rem 0.7rem', 
               borderRadius: 'var(--radius-full)', fontSize: '0.7rem', fontWeight: 700, 
               textTransform: 'uppercase', letterSpacing: '0.05em',
-              backdrop: 'blur(4px)'
+              backdropFilter: 'blur(4px)'
             }}>
               {task.status}
             </div>
