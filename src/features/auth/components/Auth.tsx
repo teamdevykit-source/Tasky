@@ -7,7 +7,7 @@ export const Auth = () => {
   const theme = useStore(s => s.theme);
   const toggleTheme = useStore(s => s.toggleTheme);
   const isDark = theme === 'dark';
-  
+
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -25,13 +25,14 @@ export const Auth = () => {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       } else {
-        const { error } = await supabase.auth.signUp({ 
-          email, 
+        const { error } = await supabase.auth.signUp({
+          email,
           password,
           options: {
             data: {
               full_name: fullName || email.split('@')[0]
-            }
+            },
+            emailRedirectTo: 'https://tasky-zeta-dun.vercel.app/',
           }
         });
         if (error) throw error;
@@ -48,44 +49,44 @@ export const Auth = () => {
   return (
     <div className="auth-page">
       <div className="auth-brand-section">
-         <div className="auth-brand-content">
-            <div className="brand-badge">
-               <ShieldCheck size={14} /> EL MERAKI ENTERPRISE
-            </div>
-            <h1 className="brand-tagline">
-               Next-Generation <br/> 
-               <span className="text-gradient">Operational Control</span>
-            </h1>
-            <p className="brand-description">
-               Streamline your organization's workflow with real-time task synchronization, 
-               advanced observability, and enterprise-grade security.
-            </p>
+        <div className="auth-brand-content">
+          <div className="brand-badge">
+            <ShieldCheck size={14} /> EL MERAKI ENTERPRISE
+          </div>
+          <h1 className="brand-tagline">
+            Next-Generation <br />
+            <span className="text-gradient">Operational Control</span>
+          </h1>
+          <p className="brand-description">
+            Streamline your organization's workflow with real-time task synchronization,
+            advanced observability, and enterprise-grade security.
+          </p>
 
-            <div className="feature-list">
-               <div className="feature-item">
-                  <div className="feature-icon"><Zap size={18} /></div>
-                  <div>
-                     <div className="feature-title">Real-time Sync</div>
-                     <div className="feature-desc">Updates propagate instantly across the team.</div>
-                  </div>
-               </div>
-               <div className="feature-item">
-                  <div className="feature-icon"><Globe size={18} /></div>
-                  <div>
-                     <div className="feature-title">Global Accessibility</div>
-                     <div className="feature-desc">Access your workspace from any device, anywhere.</div>
-                  </div>
-               </div>
+          <div className="feature-list">
+            <div className="feature-item">
+              <div className="feature-icon"><Zap size={18} /></div>
+              <div>
+                <div className="feature-title">Real-time Sync</div>
+                <div className="feature-desc">Updates propagate instantly across the team.</div>
+              </div>
             </div>
-         </div>
-         <div className="auth-footer-brand">
-            © 2026 El Meraki Ops. All rights Reserved.
-         </div>
+            <div className="feature-item">
+              <div className="feature-icon"><Globe size={18} /></div>
+              <div>
+                <div className="feature-title">Global Accessibility</div>
+                <div className="feature-desc">Access your workspace from any device, anywhere.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="auth-footer-brand">
+          © 2026 El Meraki Ops. All rights Reserved.
+        </div>
       </div>
 
       <div className="auth-form-section">
         {/* Theme toggle */}
-        <button 
+        <button
           onClick={toggleTheme}
           style={{
             position: 'absolute', top: '1.5rem', right: '1.5rem',
@@ -100,92 +101,92 @@ export const Auth = () => {
           {isDark ? <Sun size={16} /> : <Moon size={16} />}
         </button>
         <div className="auth-card">
-            <div className="auth-card-header">
-                <div className="auth-logo">M</div>
-                <h2 className="auth-title">{isLogin ? 'Welcome Back' : 'Create Account'}</h2>
-                <p className="auth-subtitle">
-                    {isLogin 
-                      ? 'Access your mission-critical dashboard' 
-                      : 'Join the next generation of task management'}
-                </p>
+          <div className="auth-card-header">
+            <div className="auth-logo">M</div>
+            <h2 className="auth-title">{isLogin ? 'Welcome Back' : 'Create Account'}</h2>
+            <p className="auth-subtitle">
+              {isLogin
+                ? 'Access your mission-critical dashboard'
+                : 'Join the next generation of task management'}
+            </p>
+          </div>
+
+          <form onSubmit={handleAuth} className="auth-form">
+            {error && (
+              <div className="auth-error animate-shake">
+                {error}
+              </div>
+            )}
+
+            {!isLogin && (
+              <div className="form-group-modern">
+                <label className="form-label-modern">Full Name</label>
+                <div className="input-with-icon">
+                  <User className="input-icon" size={18} />
+                  <input
+                    type="text"
+                    className="input-modern"
+                    placeholder="E.g. Alexander Hamilton"
+                    value={fullName}
+                    onChange={e => setFullName(e.target.value)}
+                    required={!isLogin}
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="form-group-modern">
+              <label className="form-label-modern">Email Address</label>
+              <div className="input-with-icon">
+                <Mail className="input-icon" size={18} />
+                <input
+                  type="email"
+                  className="input-modern"
+                  placeholder="name@company.com"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  required
+                />
+              </div>
             </div>
 
-            <form onSubmit={handleAuth} className="auth-form">
-                {error && (
-                    <div className="auth-error animate-shake">
-                        {error}
-                    </div>
-                )}
-                
-                {!isLogin && (
-                    <div className="form-group-modern">
-                        <label className="form-label-modern">Full Name</label>
-                        <div className="input-with-icon">
-                            <User className="input-icon" size={18} />
-                            <input 
-                                type="text" 
-                                className="input-modern" 
-                                placeholder="E.g. Alexander Hamilton"
-                                value={fullName} 
-                                onChange={e => setFullName(e.target.value)} 
-                                required={!isLogin}
-                            />
-                        </div>
-                    </div>
-                )}
-
-                <div className="form-group-modern">
-                    <label className="form-label-modern">Email Address</label>
-                    <div className="input-with-icon">
-                        <Mail className="input-icon" size={18} />
-                        <input 
-                            type="email" 
-                            className="input-modern" 
-                            placeholder="name@company.com"
-                            value={email} 
-                            onChange={e => setEmail(e.target.value)} 
-                            required 
-                        />
-                    </div>
-                </div>
-
-                <div className="form-group-modern">
-                    <label className="form-label-modern">Password</label>
-                    <div className="input-with-icon">
-                        <Lock className="input-icon" size={18} />
-                        <input 
-                            type="password" 
-                            className="input-modern" 
-                            placeholder="••••••••"
-                            value={password} 
-                            onChange={e => setPassword(e.target.value)} 
-                            required 
-                        />
-                    </div>
-                </div>
-
-                <button className="auth-submit-btn" disabled={loading}>
-                    {loading ? (
-                        <span className="spinner"></span>
-                    ) : (
-                        <>
-                            {isLogin ? 'Sign In' : 'Create Account'}
-                            <ArrowRight size={18} />
-                        </>
-                    )}
-                </button>
-            </form>
-
-            <div className="auth-toggle">
-                <span>{isLogin ? "Don't have an account?" : "Already registered?"}</span>
-                <button 
-                    type="button" 
-                    className="auth-toggle-btn"
-                    onClick={() => setIsLogin(!isLogin)}
-                >
-                    {isLogin ? "Create one" : "Sign in"}
-                </button>
+            <div className="form-group-modern">
+              <label className="form-label-modern">Password</label>
+              <div className="input-with-icon">
+                <Lock className="input-icon" size={18} />
+                <input
+                  type="password"
+                  className="input-modern"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  required
+                />
+              </div>
             </div>
+
+            <button className="auth-submit-btn" disabled={loading}>
+              {loading ? (
+                <span className="spinner"></span>
+              ) : (
+                <>
+                  {isLogin ? 'Sign In' : 'Create Account'}
+                  <ArrowRight size={18} />
+                </>
+              )}
+            </button>
+          </form>
+
+          <div className="auth-toggle">
+            <span>{isLogin ? "Don't have an account?" : "Already registered?"}</span>
+            <button
+              type="button"
+              className="auth-toggle-btn"
+              onClick={() => setIsLogin(!isLogin)}
+            >
+              {isLogin ? "Create one" : "Sign in"}
+            </button>
+          </div>
         </div>
       </div>
 
