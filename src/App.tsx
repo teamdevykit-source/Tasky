@@ -3,6 +3,7 @@ import { Sidebar } from './components/Layout/Sidebar';
 import { TaskBoard } from './features/tasks/components/TaskBoard';
 import { CreateTaskModal } from './features/tasks/components/CreateTaskModal';
 import { TaskDetailModal } from './features/tasks/components/TaskDetailModal';
+import { DashboardAnalytics } from './features/dashboard/components/DashboardAnalytics';
 import { Auth } from './features/auth/components/Auth';
 import { AdminSettings } from './features/admin/components/AdminSettings';
 import { useStore } from './store/useStore';
@@ -109,6 +110,8 @@ function App() {
 
         {viewMode === 'settings' ? (
           <AdminSettings />
+        ) : viewMode === 'dashboard' ? (
+          <DashboardAnalytics />
         ) : (
           <TaskBoard onSelectTask={setSelectedTaskId} />
         )}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../../../store/useStore';
-import { Clock, Calendar, Sparkles, CheckCircle2, X } from 'lucide-react';
+import { Clock, Calendar, Sparkles, CheckCircle2, X, ChevronDown, ChevronUp, Users } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -20,6 +20,8 @@ export const CreateTaskModal: React.FC<{ onClose: () => void }> = ({ onClose }) 
   const [selectedObservers, setSelectedObservers] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [isObserversOpen, setIsObserversOpen] = useState(false);
+  const [isAssigneeOpen, setIsAssigneeOpen] = useState(false);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -91,19 +93,7 @@ export const CreateTaskModal: React.FC<{ onClose: () => void }> = ({ onClose }) 
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{
-        background: 'var(--bg-elevated)',
-        borderRadius: 'var(--radius-2xl)',
-        width: '100%',
-        maxWidth: '960px',
-        maxHeight: '92vh',
-        overflow: 'hidden',
-        boxShadow: 'var(--shadow-xl)',
-        display: 'grid',
-        gridTemplateColumns: '1fr 300px',
-        border: '1px solid var(--border-strong)',
-        animation: 'modalIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
-      }}>
+      <div className="modal-content modal-grid" onClick={e => e.stopPropagation()} style={{ maxWidth: '960px' }}>
         {/* LEFT — Form */}
         <div style={{ padding: '2.5rem', overflowY: 'auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2rem' }}>
@@ -187,13 +177,74 @@ export const CreateTaskModal: React.FC<{ onClose: () => void }> = ({ onClose }) 
               </div>
             </div>
 
-            {/* Assignee (Admin only) */}
+            {/* Assignee Selection (Dropdown) */}
             {currentUser.role === 'Admin' && (
-              <div>
+              <div style={{ position: 'relative' }}>
                 <label style={labelStyle}>Assignee</label>
-                <select value={assigneeId} onChange={e => setAssigneeId(e.target.value)} style={inputStyle}>
-                  {profiles.map(p => <option key={p.id} value={p.id}>{p.full_name} ({p.role})</option>)}
-                </select>
+                <button 
+                  type="button"
+                  onClick={() => setIsAssigneeOpen(!isAssigneeOpen)}
+                  style={{
+                    width: '100%', padding: '0.7rem 1rem', borderRadius: 'var(--radius-md)',
+                    background: 'var(--surface)', border: '1.5px solid var(--border-strong)',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    cursor: 'pointer', transition: 'var(--transition)'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    {assigneeObj ? (
+                      <>
+                        <div className="avatar" style={{ width: '22px', height: '22px', fontSize: '0.6rem', borderWidth: '1px' }}>
+                          {assigneeObj.full_name.charAt(0).toUpperCase()}
+                        </div>
+                        <span style={{ fontSize: '0.9rem', color: 'var(--text-1)', fontWeight: 600 }}>{assigneeObj.full_name}</span>
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-4)' }}>({assigneeObj.role})</span>
+                      </>
+                    ) : (
+                      <span style={{ fontSize: '0.9rem', color: 'var(--text-4)' }}>Select assignee...</span>
+                    )}
+                  </div>
+                  {isAssigneeOpen ? <ChevronUp size={16} color="var(--text-4)" /> : <ChevronDown size={16} color="var(--text-4)" />}
+                </button>
+
+                {isAssigneeOpen && (
+                  <div style={{
+                    position: 'absolute', top: 'calc(100% + 0.4rem)', left: 0, right: 0,
+                    background: 'var(--surface)', borderRadius: 'var(--radius-lg)',
+                    border: '1px solid var(--border)', boxShadow: 'var(--shadow-lg)',
+                    zIndex: 60, maxHeight: '200px', overflowY: 'auto', padding: '0.35rem'
+                  }}>
+                    {profiles.map(p => (
+                      <div 
+                        key={p.id} 
+                        onClick={() => {
+                          setAssigneeId(p.id);
+                          setIsAssigneeOpen(false);
+                        }}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '0.75rem',
+                          padding: '0.6rem 0.75rem', borderRadius: 'var(--radius-md)', 
+                          cursor: 'pointer', transition: 'var(--transition-fast)',
+                          background: assigneeId === p.id ? 'var(--primary-light)' : 'transparent',
+                          marginBottom: '0.15rem'
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = assigneeId === p.id ? 'var(--primary-light)' : 'var(--surface-2)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = assigneeId === p.id ? 'var(--primary-light)' : 'transparent')}
+                      >
+                        <div className="avatar" style={{ width: '24px', height: '24px', fontSize: '0.65rem', borderWidth: '1px' }}>{p.full_name.charAt(0).toUpperCase()}</div>
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                          <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-1)' }}>{p.full_name}</span>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-4)' }}>{p.role}</span>
+                        </div>
+                        {assigneeId === p.id && (
+                          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
+                            <CheckCircle2 size={14} color="var(--primary)" />
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -283,33 +334,81 @@ export const CreateTaskModal: React.FC<{ onClose: () => void }> = ({ onClose }) 
             </div>
           </div>
 
-          {/* Observers */}
-          {currentUser.role === 'Admin' && (
-            <div>
-              <div style={sectionLabel}>Observers</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                {profiles.map(p => (
-                  <label key={p.id} style={{
-                    display: 'flex', alignItems: 'center', gap: '0.6rem',
-                    padding: '0.4rem 0.6rem', borderRadius: 'var(--radius-sm)', cursor: 'pointer',
-                    background: selectedObservers.includes(p.id) ? 'var(--primary-light)' : 'transparent',
-                    transition: 'var(--transition-fast)',
-                    border: selectedObservers.includes(p.id) ? '1px solid rgba(129,140,248,0.15)' : '1px solid transparent'
-                  }}>
-                    <input type="checkbox" checked={selectedObservers.includes(p.id)}
-                      onChange={e => {
-                        if (e.target.checked) setSelectedObservers([...selectedObservers, p.id]);
-                        else setSelectedObservers(selectedObservers.filter(id => id !== p.id));
+          {/* Observers Dropdown */}
+          <div>
+            <div style={sectionLabel}>Observers</div>
+            <div style={{ position: 'relative' }}>
+              <button 
+                type="button"
+                onClick={() => setIsObserversOpen(!isObserversOpen)}
+                style={{
+                  width: '100%', padding: '0.65rem 1rem', borderRadius: 'var(--radius-md)',
+                  background: 'var(--surface)', border: '1.5px solid var(--border-strong)',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  cursor: 'pointer', transition: 'var(--transition)'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <Users size={14} style={{ color: 'var(--primary)', opacity: 0.7 }} />
+                  <span style={{ fontSize: '0.8rem', color: selectedObservers.length > 0 ? 'var(--text-1)' : 'var(--text-4)' }}>
+                    {selectedObservers.length > 0 
+                      ? `${selectedObservers.length} Observer${selectedObservers.length > 1 ? 's' : ''} selected` 
+                      : 'Select observers...'}
+                  </span>
+                </div>
+                {isObserversOpen ? <ChevronUp size={14} color="var(--text-4)" /> : <ChevronDown size={14} color="var(--text-4)" />}
+              </button>
+
+              {isObserversOpen && (
+                <div style={{
+                  position: 'absolute', top: 'calc(100% + 0.4rem)', left: 0, right: 0,
+                  background: 'var(--surface)', borderRadius: 'var(--radius-lg)',
+                  border: '1px solid var(--border)', boxShadow: 'var(--shadow-lg)',
+                  zIndex: 50, maxHeight: '200px', overflowY: 'auto', padding: '0.35rem'
+                }}>
+                  {profiles.map(p => (
+                    <label 
+                      key={p.id} 
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '0.75rem',
+                        padding: '0.6rem 0.75rem', borderRadius: 'var(--radius-md)', 
+                        cursor: 'pointer', transition: 'var(--transition-fast)',
+                        background: selectedObservers.includes(p.id) ? 'var(--primary-light)' : 'transparent',
+                        marginBottom: '0.15rem'
                       }}
-                      style={{ accentColor: '#818cf8' }}
-                    />
-                    <div className="avatar" style={{ width: '20px', height: '20px', fontSize: '0.55rem', borderWidth: '1px' }}>{p.full_name.charAt(0)}</div>
-                    <span style={{ fontSize: '0.78rem', fontWeight: 500, color: 'var(--text-2)' }}>{p.full_name}</span>
-                  </label>
-                ))}
-              </div>
+                      onMouseEnter={(e) => (e.currentTarget.style.background = selectedObservers.includes(p.id) ? 'var(--primary-light)' : 'var(--surface-2)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = selectedObservers.includes(p.id) ? 'var(--primary-light)' : 'transparent')}
+                    >
+                      <input 
+                        type="checkbox" 
+                        checked={selectedObservers.includes(p.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) setSelectedObservers([...selectedObservers, p.id]);
+                          else setSelectedObservers(selectedObservers.filter(id => id !== p.id));
+                        }}
+                        style={{ accentColor: 'var(--primary)' }}
+                      />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                        <div className="avatar" style={{ width: '22px', height: '22px', fontSize: '0.6rem', borderWidth: '1px' }}>
+                          {p.full_name.charAt(0).toUpperCase()}
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                          <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-1)' }}>{p.full_name}</span>
+                          <span style={{ fontSize: '0.65rem', color: 'var(--text-4)' }}>{p.role}</span>
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                  {profiles.length === 0 && (
+                    <div style={{ padding: '1rem', textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-4)' }}>
+                      No other team members found.
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
       </div>
     </div>

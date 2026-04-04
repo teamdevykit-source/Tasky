@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { useStore } from '../../../store/useStore';
-import { Mail, Lock, User, ArrowRight, ShieldCheck, Zap, Globe, Sun, Moon } from 'lucide-react';
+import { Mail, User, ArrowRight, ShieldCheck, Zap, Globe, Sun, Moon, Eye, EyeOff } from 'lucide-react';
 
 export const Auth = () => {
   const theme = useStore(s => s.theme);
@@ -13,6 +13,7 @@ export const Auth = () => {
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [isLogin, setIsLogin] = useState(true);
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleAuth = async (e: React.FormEvent) => {
@@ -25,7 +26,7 @@ export const Auth = () => {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       } else {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
@@ -36,11 +37,21 @@ export const Auth = () => {
           }
         });
         if (error) throw error;
+        
+        // Supabase returns data.user with empty identities if user already exists
+        if (data.user && (!data.user.identities || data.user.identities.length === 0)) {
+          throw new Error('This email is already registered. Please log in instead.');
+        }
+
         alert('Registration successful! Please check your email or log in.');
         setIsLogin(true);
       }
     } catch (err: any) {
-      setError(err.message || 'Authentication failed. Please check your credentials.');
+      let msg = err.message || 'Authentication failed. Please check your credentials.';
+      if (msg.toLowerCase().includes('already registered')) {
+        msg = 'This email is already registered. Please log in instead.';
+      }
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -122,7 +133,6 @@ export const Auth = () => {
               <div className="form-group-modern">
                 <label className="form-label-modern">Full Name</label>
                 <div className="input-with-icon">
-                  <User className="input-icon" size={18} />
                   <input
                     type="text"
                     className="input-modern"
@@ -131,6 +141,7 @@ export const Auth = () => {
                     onChange={e => setFullName(e.target.value)}
                     required={!isLogin}
                   />
+                  <User className="input-icon" size={18} />
                 </div>
               </div>
             )}
@@ -138,7 +149,6 @@ export const Auth = () => {
             <div className="form-group-modern">
               <label className="form-label-modern">Email Address</label>
               <div className="input-with-icon">
-                <Mail className="input-icon" size={18} />
                 <input
                   type="email"
                   className="input-modern"
@@ -147,21 +157,30 @@ export const Auth = () => {
                   onChange={e => setEmail(e.target.value)}
                   required
                 />
+                <Mail className="input-icon" size={18} />
               </div>
             </div>
 
             <div className="form-group-modern">
               <label className="form-label-modern">Password</label>
               <div className="input-with-icon">
-                <Lock className="input-icon" size={18} />
                 <input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   className="input-modern"
                   placeholder="••••••••"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   required
                 />
+                <button 
+                  type="button" 
+                  className="input-icon toggle-password" 
+                  onClick={() => setShowPassword(!showPassword)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                  title={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
               </div>
             </div>
 
@@ -390,17 +409,21 @@ export const Auth = () => {
 
         .input-icon {
             position: absolute;
-            left: 1rem;
+            right: 1rem;
             top: 50%;
             transform: translateY(-50%);
             color: var(--text-4);
-            transition: all 0.2s;
+            transition: color 0.2s;
             z-index: 1;
+        }
+        
+        .input-icon.toggle-password:hover {
+            color: var(--text-1);
         }
 
         .input-modern {
             width: 100%;
-            padding: 0.8rem 1rem 0.8rem 2.75rem;
+            padding: 0.8rem 2.75rem 0.8rem 1rem;
             border-radius: var(--radius-md);
             border: 1.5px solid var(--border-strong);
             background: var(--surface);

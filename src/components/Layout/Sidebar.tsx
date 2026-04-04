@@ -1,6 +1,6 @@
 import React from 'react';
 import { useStore } from '../../store/useStore';
-import { Plus, KanbanSquare, List, Settings, LogOut, Zap, Sun, Moon, X } from 'lucide-react';
+import { Plus, KanbanSquare, List, Settings, LogOut, Zap, Sun, Moon, X, LayoutDashboard } from 'lucide-react';
 
 interface SidebarProps {
   onOpenCreateModal: () => void;
@@ -90,6 +90,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ onOpenCreateModal, isOpen, onC
         {/* Navigation */}
         <div className="nav-label">Navigation</div>
         <nav className="nav-group">
+          <button 
+            className={`nav-item ${viewMode === 'dashboard' ? 'active' : ''}`}
+            onClick={() => setViewMode('dashboard')}
+          >
+            <LayoutDashboard size={17} />
+            <span>Dashboard</span>
+          </button>
+
           <button 
             className={`nav-item ${viewMode === 'kanban' ? 'active' : ''}`}
             onClick={() => setViewMode('kanban')}
@@ -190,7 +198,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ onOpenCreateModal, isOpen, onC
             }}>
               {currentUser.full_name}
             </div>
-            <div style={{ fontSize: '0.65rem', color: 'var(--text-4)', fontWeight: 500 }}>{currentUser.role}</div>
+            <div style={{ fontSize: '0.65rem', color: 'var(--text-4)', fontWeight: 500 }}>
+              {currentUser.job_title ? `${currentUser.job_title} (${currentUser.role})` : currentUser.role}
+            </div>
           </div>
         </div>
         <button className="nav-item" onClick={() => logout()} style={{ 

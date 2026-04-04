@@ -41,7 +41,7 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '850px', width: '95%', padding: 0, overflow: 'hidden' }}>
+      <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '850px', width: '95%', padding: 0 }}>
         
         {/* Header with gradient */}
         <div style={{ 
@@ -79,7 +79,7 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
         </div>
 
         {/* Body */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 260px', minHeight: '380px', position: 'relative' }}>
+        <div className="modal-detail-grid">
           
           {isConfirmingDelete && (
             <div style={{

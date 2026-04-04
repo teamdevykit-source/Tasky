@@ -12,6 +12,7 @@ export interface Profile {
   id: string;
   email: string;
   full_name: string;
+  job_title?: string;
   role: UserRole;
 }
 
@@ -33,7 +34,7 @@ export interface Task {
   id: string;
   title: string;
   description: string;
-  assignee_id: string;
+  assignee_id: string | null;
   creator_id: string;
   status: string;
   category: string | null;

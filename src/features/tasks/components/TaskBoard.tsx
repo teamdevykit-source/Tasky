@@ -2,8 +2,6 @@ import React, { useState, useMemo } from 'react';
 import { useStore } from '../../../store/useStore';
 import { TaskCard } from './TaskCard';
 import { Search, Filter, ArrowUpDown, Clock, User as UserIcon, Tag, LayoutGrid, ListChecks } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 
 export const TaskBoard: React.FC<{ onSelectTask: (id: string | null) => void }> = ({ onSelectTask }) => {
   const viewMode = useStore(s => s.viewMode);
@@ -184,10 +182,10 @@ export const TaskBoard: React.FC<{ onSelectTask: (id: string | null) => void }> 
           <table className="scrum-table">
             <thead>
               <tr>
-                <th style={{ width: '35%' }}>Task</th>
+                <th style={{ width: '25%' }}>Task</th>
                 <th>Category</th>
                 <th>Timeline</th>
-                <th>Assignee</th>
+                <th>Team</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -206,10 +204,7 @@ export const TaskBoard: React.FC<{ onSelectTask: (id: string | null) => void }> 
                     onClick={() => onSelectTask(task.id)}
                   >
                     <td>
-                      <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-1)', marginBottom: '0.2rem' }}>{task.title}</div>
-                      <div className="task-desc-markdown" style={{ fontSize: '0.78rem', maxHeight: '36px', overflow: 'hidden' }}>
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{task.description || ''}</ReactMarkdown>
-                      </div>
+                      <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-1)' }}>{task.title}</div>
                     </td>
                     <td>
                       {task.category ? (
@@ -229,15 +224,52 @@ export const TaskBoard: React.FC<{ onSelectTask: (id: string | null) => void }> 
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-3)' }}>
                         <Clock size={13} style={{ color: 'var(--primary)', opacity: 0.5 }} />
-                        <span>{task.start_date || '?'} — {task.end_date || '?'}</span>
+                        <span>
+                          {!task.start_date && !task.end_date 
+                            ? 'No date' 
+                            : `${task.start_date || 'No date'} — ${task.end_date || 'No date'}`}
+                        </span>
                       </div>
                     </td>
                     <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                        <div className="avatar" style={{ width: '26px', height: '26px', fontSize: '0.65rem' }}>
-                          {assignee?.full_name.charAt(0).toUpperCase()}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        {/* Maker */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-4)', width: '40px' }}>MAKER</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <div className="avatar" style={{ width: '20px', height: '20px', fontSize: '0.55rem' }}>
+                              {(profiles.find(u => u.id === task.creator_id)?.full_name || '?').charAt(0).toUpperCase()}
+                            </div>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-2)' }}>{profiles.find(u => u.id === task.creator_id)?.full_name || 'Unknown'}</span>
+                          </div>
                         </div>
-                        <span style={{ fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-2)' }}>{assignee?.full_name || 'Unassigned'}</span>
+                        {/* Assignee */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-4)', width: '40px' }}>OWNER</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <div className="avatar" style={{ width: '20px', height: '20px', fontSize: '0.55rem' }}>
+                              {assignee?.full_name.charAt(0).toUpperCase() || '?'}
+                            </div>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-1)' }}>{assignee?.full_name || 'Unassigned'}</span>
+                          </div>
+                        </div>
+                        {/* Observers */}
+                        {task.observers && task.observers.length > 0 && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-4)', width: '40px' }}>WATCH</span>
+                            <div style={{ display: 'flex', gap: '0.2rem', flexWrap: 'wrap' }}>
+                              {task.observers.map(obsId => {
+                                const obs = profiles.find(p => p.id === obsId);
+                                if (!obs) return null;
+                                return (
+                                  <div key={obsId} className="avatar" style={{ width: '18px', height: '18px', fontSize: '0.5rem' }} title={obs.full_name}>
+                                    {obs.full_name.charAt(0).toUpperCase()}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </td>
                     <td>
@@ -364,6 +396,44 @@ export const TaskBoard: React.FC<{ onSelectTask: (id: string | null) => void }> 
             </div>
           );
         })}
+        {(() => {
+          const unmappedTasks = filteredTasks.filter(t => !statuses.find(s => s.name === t.status));
+          if (unmappedTasks.length === 0) return null;
+          
+          return (
+            <div 
+              key="unmapped" 
+              className="column" 
+              style={{ borderTop: `3px solid #ff4444` }}
+            >
+              <div className="column-title">
+                <div style={{ 
+                  width: '8px', height: '8px', borderRadius: '50%', 
+                  background: '#ff4444', 
+                  boxShadow: `0 0 10px #ff444460` 
+                }} />
+                Unmapped Status
+                <span className="badge" style={{ 
+                  background: `#ff444415`, color: '#ff4444', 
+                  border: `1px solid #ff444425`,
+                  fontSize: '0.6rem'
+                }}>
+                  {unmappedTasks.length}
+                </span>
+              </div>
+              
+              <div style={{ 
+                minHeight: '250px', 
+                display: 'flex', flexDirection: 'column', gap: '0.625rem',
+                transition: 'var(--transition)'
+              }}>
+                {unmappedTasks.map(task => (
+                  <TaskCard key={task.id} task={task} onClick={() => onSelectTask(task.id)} />
+                ))}
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

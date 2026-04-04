@@ -15,8 +15,8 @@ interface StoreState {
   alertData: { message: string, type: 'error' | 'success' } | null;
 
   setAlertData: (data: { message: string, type: 'error' | 'success' } | null) => void;
-  viewMode: 'kanban' | 'scrum' | 'settings';
-  setViewMode: (mode: 'kanban' | 'scrum' | 'settings') => void;
+  viewMode: 'dashboard' | 'kanban' | 'scrum' | 'settings';
+  setViewMode: (mode: 'dashboard' | 'kanban' | 'scrum' | 'settings') => void;
   setTheme: (theme: Theme) => void;
   toggleTheme: () => void;
   getVisibleTasks: () => Task[];
@@ -26,11 +26,14 @@ interface StoreState {
   updateTask: (taskId: string, updates: Partial<Task>) => Promise<void>;
   updateTaskStatus: (taskId: string, status: string) => Promise<void>;
   updateUserRole: (userId: string, role: Profile['role']) => Promise<void>;
+  updateUserJobTitle: (userId: string, jobTitle: string) => Promise<void>;
+  inviteUser: (email: string) => Promise<void>;
   addCategory: (name: string, color: string) => Promise<void>;
   deleteCategory: (id: string) => Promise<void>;
   addStatus: (name: string, color: string) => Promise<void>;
   deleteStatus: (id: string) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
+  deleteUser: (userId: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -50,6 +53,16 @@ const applyTheme = (theme: Theme) => {
 // Apply initial theme immediately
 applyTheme(getInitialTheme());
 
+const getInitialViewMode = (): StoreState['viewMode'] => {
+  try {
+    const saved = localStorage.getItem('elmeraki-view');
+    if (saved === 'dashboard' || saved === 'kanban' || saved === 'scrum' || saved === 'settings') {
+      return saved as StoreState['viewMode'];
+    }
+  } catch { }
+  return 'dashboard';
+};
+
 // Guard against multiple initializations
 let _initialized = false;
 
@@ -64,8 +77,11 @@ export const useStore = create<StoreState>((set, get) => ({
   alertData: null,
 
   setAlertData: (data) => set({ alertData: data }),
-  viewMode: 'kanban',
-  setViewMode: (mode) => set({ viewMode: mode }),
+  viewMode: getInitialViewMode(),
+  setViewMode: (mode) => {
+    try { localStorage.setItem('elmeraki-view', mode); } catch { }
+    set({ viewMode: mode });
+  },
 
   setTheme: (theme) => {
     applyTheme(theme);
@@ -93,9 +109,9 @@ export const useStore = create<StoreState>((set, get) => ({
 
     const loadData = async (userId: string) => {
       const [{ data: profile }, { data: tasks }, { data: profiles }, { data: categories }, { data: statuses }] = await Promise.all([
-        supabase.from('profiles').select('id, email, full_name, user_roles(role)').eq('id', userId).single(),
+        supabase.from('profiles').select('id, email, full_name, job_title, user_roles(role)').eq('id', userId).single(),
         supabase.from('tasks').select('*'),
-        supabase.from('profiles').select('id, email, full_name, user_roles(role)'),
+        supabase.from('profiles').select('id, email, full_name, job_title, user_roles(role)'),
         supabase.from('categories').select('*').order('sort_order'),
         supabase.from('statuses').select('*').order('sort_order')
       ]);
@@ -137,7 +153,7 @@ export const useStore = create<StoreState>((set, get) => ({
     // These enhance the experience but are NOT required for CRUD to work.
     try {
       const handleProfileUpdate = () => {
-        supabase.from('profiles').select('id, email, full_name, user_roles(role)').then(({ data }) => {
+        supabase.from('profiles').select('id, email, full_name, job_title, user_roles(role)').then(({ data }) => {
           if (data) {
             const getRole = (p: any) => {
               if (Array.isArray(p.user_roles)) return p.user_roles[0]?.role || 'Worker';
@@ -254,6 +270,32 @@ export const useStore = create<StoreState>((set, get) => ({
     }
   },
 
+  updateUserJobTitle: async (userId, jobTitle) => {
+    const prevProfiles = get().profiles;
+    set((state) => ({
+      profiles: state.profiles.map(p => p.id === userId ? { ...p, job_title: jobTitle } : p)
+    }));
+    const { error } = await supabase.from('profiles').update({ job_title: jobTitle }).eq('id', userId);
+    if (error) {
+      set({ profiles: prevProfiles });
+      get().setAlertData({ message: "Error updating job title: " + error.message, type: 'error' });
+    }
+  },
+
+  inviteUser: async (email) => {
+    try {
+      // Create user or send magic link depending on Supabase settings
+      const { error } = await supabase.auth.signInWithOtp({ 
+        email,
+        options: { emailRedirectTo: window.location.origin }
+      });
+      if (error) throw error;
+      get().setAlertData({ message: `Invitation sent to ${email} successfully!`, type: 'success' });
+    } catch (err: any) {
+      get().setAlertData({ message: "Failed to invite: " + err.message, type: 'error' });
+    }
+  },
+
   addCategory: async (name, color) => {
     const { categories } = get();
     const { data, error } = await supabase.from('categories').insert([{ name, color, sort_order: categories.length }]).select().single();
@@ -287,6 +329,25 @@ export const useStore = create<StoreState>((set, get) => ({
     if (error) {
       set({ statuses: prevStatuses });
       get().setAlertData({ message: "Error deleting status: " + error.message, type: 'error' });
+    }
+  },
+
+  deleteUser: async (userId: string) => {
+    try {
+      // First delete from user_roles to prevent FK issues if set up
+      const { error: roleError } = await supabase.from('user_roles').delete().eq('user_id', userId);
+      if (roleError) throw roleError;
+
+      const { error } = await supabase.from('profiles').delete().eq('id', userId);
+      if (error) throw error;
+      
+      set({ 
+        profiles: get().profiles.filter(p => p.id !== userId),
+        tasks: get().tasks.map(t => t.assignee_id === userId ? { ...t, assignee_id: null } : t)
+      });
+      set({ alertData: { message: 'User removed from workspace', type: 'success' } });
+    } catch (err: any) {
+      set({ alertData: { message: err.message || 'Failed to delete user', type: 'error' } });
     }
   },
 

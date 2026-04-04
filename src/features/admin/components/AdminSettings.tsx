@@ -6,14 +6,18 @@ export const AdminSettings: React.FC = () => {
   const currentUser = useStore(s => s.currentUser);
   const profiles = useStore(s => s.profiles);
   const updateUserRole = useStore(s => s.updateUserRole);
+  const updateUserJobTitle = useStore(s => s.updateUserJobTitle);
   const categories = useStore(s => s.categories);
   const addCategory = useStore(s => s.addCategory);
   const deleteCategory = useStore(s => s.deleteCategory);
   const statuses = useStore(s => s.statuses);
   const addStatus = useStore(s => s.addStatus);
   const deleteStatus = useStore(s => s.deleteStatus);
+  const inviteUser = useStore(s => s.inviteUser);
+  const deleteUser = useStore(s => s.deleteUser);
 
   const [activeTab, setActiveTab] = useState<'users' | 'categories' | 'statuses'>('users');
+  const [inviteEmail, setInviteEmail] = useState('');
   const [newCategory, setNewCategory] = useState('');
   const [newCategoryColor, setNewCategoryColor] = useState('#818cf8');
   const [newStatus, setNewStatus] = useState('');
@@ -42,6 +46,12 @@ export const AdminSettings: React.FC = () => {
     addStatus(newStatus.trim(), newStatusColor);
     setNewStatus('');
     setNewStatusColor('#818cf8');
+  };
+
+  const handleInviteUser = async () => {
+    if (!inviteEmail.trim() || !inviteEmail.includes('@')) return;
+    await inviteUser(inviteEmail.trim());
+    setInviteEmail('');
   };
 
   return (
@@ -87,13 +97,37 @@ export const AdminSettings: React.FC = () => {
       <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
         {/* Users Tab */}
         {activeTab === 'users' && (
-          <div className="scrum-table-wrapper">
-            <table className="scrum-table">
+          <div>
+            <div style={{ 
+              display: 'flex', gap: '0.75rem', marginBottom: '1.5rem', padding: '1.25rem', 
+              background: 'var(--surface)', borderRadius: 'var(--radius-lg)', 
+              border: '1px solid var(--border)', alignItems: 'flex-end'
+            }}>
+              <div style={{ flex: 1 }}>
+                <label style={fieldLabel}>Invite New Workspace Member</label>
+                <input
+                  type="email"
+                  placeholder="colleague@company.com"
+                  value={inviteEmail}
+                  onChange={e => setInviteEmail(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleInviteUser()}
+                  style={{ width: '100%' }}
+                />
+              </div>
+              <button className="primary-btn" onClick={handleInviteUser} style={{ height: '40px', fontSize: '0.82rem' }} disabled={!inviteEmail}>
+                <Plus size={16} /> Send Invite
+              </button>
+            </div>
+
+            <div className="scrum-table-wrapper">
+              <table className="scrum-table">
               <thead>
                 <tr>
                   <th>User</th>
                   <th>Email</th>
+                  <th>Job Title (Label)</th>
                   <th>Role</th>
+                  <th style={{ width: '40px' }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -109,6 +143,24 @@ export const AdminSettings: React.FC = () => {
                     </td>
                     <td style={{ color: 'var(--text-3)' }}>{user.email}</td>
                     <td>
+                      <input 
+                        type="text"
+                        placeholder="e.g. Manager"
+                        defaultValue={user.job_title || ''}
+                        onBlur={(e) => {
+                          if (e.target.value !== (user.job_title || '')) {
+                            updateUserJobTitle(user.id, e.target.value);
+                          }
+                        }}
+                        style={{
+                          padding: '0.35rem 0.6rem', width: '130px',
+                          borderRadius: 'var(--radius-sm)', fontSize: '0.82rem',
+                          border: '1px solid var(--border)', background: 'var(--surface-2)',
+                          color: 'var(--text-1)'
+                        }}
+                      />
+                    </td>
+                    <td>
                       <select 
                         value={user.role}
                         onChange={(e) => updateUserRole(user.id, e.target.value as any)}
@@ -122,10 +174,30 @@ export const AdminSettings: React.FC = () => {
                         {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
                       </select>
                     </td>
+                    <td>
+                      {user.id !== currentUser.id && (
+                        <button 
+                          style={{ 
+                            color: 'var(--danger)', background: 'rgba(248,113,113,0.08)', 
+                            border: 'none', cursor: 'pointer', padding: '0.4rem', 
+                            borderRadius: 'var(--radius-sm)', transition: 'var(--transition)'
+                          }}
+                          onClick={() => {
+                            if (confirm(`Delete user "${user.full_name}" and remove them from all tasks?`)) {
+                              deleteUser(user.id);
+                            }
+                          }}
+                          title="Remove user"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
           </div>
         )}
 
