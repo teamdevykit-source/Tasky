@@ -22,6 +22,21 @@ function App() {
     initialize();
   }, [initialize]);
 
+  // Hard reload when the browser tab becomes active again (User requested)
+  useEffect(() => {
+    const handleBlur = () => {
+      window.onfocus = () => {
+        window.location.reload();
+      };
+    };
+    
+    window.addEventListener('blur', handleBlur);
+    return () => {
+      window.removeEventListener('blur', handleBlur);
+      window.onfocus = null;
+    };
+  }, []);
+
   if (isCheckingSession) {
     return (
       <div style={{ 
@@ -109,8 +124,40 @@ function App() {
           onClose={() => setSelectedTaskId(null)} 
         />
       )}
+
+      <ToastNotification />
     </div>
   );
 }
+
+const ToastNotification = () => {
+  const alertData = useStore(s => s.alertData);
+  const setAlertData = useStore(s => s.setAlertData);
+
+  useEffect(() => {
+    if (alertData) {
+      const t = setTimeout(() => setAlertData(null), 4000);
+      return () => clearTimeout(t);
+    }
+  }, [alertData, setAlertData]);
+
+  if (!alertData) return null;
+
+  return (
+    <div style={{
+      position: 'fixed', bottom: '2rem', left: '50%', transform: 'translateX(-50%)',
+      padding: '1rem 2rem', borderRadius: 'var(--radius-lg)',
+      background: alertData.type === 'error' ? 'var(--danger)' : 'var(--primary)',
+      color: 'white', fontWeight: 600, zIndex: 9999,
+      boxShadow: '0 10px 25px rgba(0,0,0,0.2)', animation: 'slide-up 0.3s ease-out forwards',
+      display: 'flex', alignItems: 'center', gap: '1rem'
+    }}>
+      <span>{alertData.message}</span>
+      <button onClick={() => setAlertData(null)} style={{ color: 'white', opacity: 0.8, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+        <Menu size={16} style={{ transform: 'rotate(45deg)' }} />
+      </button>
+    </div>
+  );
+};
 
 export default App;

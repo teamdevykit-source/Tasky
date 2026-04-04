@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> = ({ taskId, onClose }) => {
+  const [isConfirmingDelete, setIsConfirmingDelete] = React.useState(false);
   const tasks = useStore(s => s.tasks);
   const profiles = useStore(s => s.profiles);
   const categories = useStore(s => s.categories);
@@ -25,9 +26,16 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
   const statColor = statuses.find(s => s.name === task.status)?.color || '#64748b';
 
   const handleDelete = () => {
-    if (confirm('Are you sure you want to delete this task? This action cannot be undone.')) {
-      deleteTask(task.id);
+    setIsConfirmingDelete(true);
+  };
+
+  const confirmDelete = async () => {
+    try {
+      await deleteTask(task.id);
       onClose();
+    } catch (e: any) {
+      // In case it throws an error instead of just alerting in store
+      console.error(e);
     }
   };
 
@@ -71,7 +79,40 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
         </div>
 
         {/* Body */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 260px', minHeight: '380px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 260px', minHeight: '380px', position: 'relative' }}>
+          
+          {isConfirmingDelete && (
+            <div style={{
+              position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(2px)'
+            }}>
+              <div style={{
+                background: 'var(--surface)', padding: '2rem', borderRadius: 'var(--radius-lg)',
+                maxWidth: '400px', textAlign: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)'
+              }}>
+                <Trash2 size={40} style={{ margin: '0 auto 1rem', color: 'var(--danger)', opacity: 0.8 }} />
+                <h3 style={{ marginBottom: '0.5rem', color: 'var(--text-1)' }}>Delete Task</h3>
+                <p style={{ fontSize: '0.9rem', color: 'var(--text-3)', marginBottom: '1.5rem', lineHeight: 1.5 }}>
+                  Are you sure you want to delete this task? This action cannot be undone and will remove it from the database permanently.
+                </p>
+                <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+                  <button 
+                    onClick={() => setIsConfirmingDelete(false)}
+                    style={{ padding: '0.6rem 1.2rem', borderRadius: 'var(--radius-md)', background: 'var(--surface-2)', color: 'var(--text-1)' }}
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={confirmDelete}
+                    style={{ padding: '0.6rem 1.2rem', borderRadius: 'var(--radius-md)', background: 'var(--danger)', color: 'white' }}
+                  >
+                    Delete Permanently
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Left: Description */}
           <div style={{ padding: '2.5rem', borderRight: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '1.25rem', color: 'var(--primary)', opacity: 0.6 }}>

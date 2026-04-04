@@ -12,14 +12,17 @@ interface StoreState {
   categories: Category[];
   statuses: Status[];
   theme: Theme;
+  alertData: { message: string, type: 'error' | 'success' } | null;
 
+  setAlertData: (data: { message: string, type: 'error' | 'success' } | null) => void;
   viewMode: 'kanban' | 'scrum' | 'settings';
   setViewMode: (mode: 'kanban' | 'scrum' | 'settings') => void;
   setTheme: (theme: Theme) => void;
   toggleTheme: () => void;
   getVisibleTasks: () => Task[];
   initialize: () => void;
-  addTask: (task: Omit<Task, 'id' | 'created_at'>) => Promise<void>;
+  refreshData: () => Promise<void>;
+  addTask: (taskData: Omit<Task, 'id' | 'created_at'>) => Promise<{ success: boolean, data?: any, error?: any }>;
   updateTask: (taskId: string, updates: Partial<Task>) => Promise<void>;
   updateTaskStatus: (taskId: string, status: string) => Promise<void>;
   updateUserRole: (userId: string, role: Profile['role']) => Promise<void>;
@@ -35,13 +38,13 @@ const getInitialTheme = (): Theme => {
   try {
     const saved = localStorage.getItem('elmeraki-theme');
     if (saved === 'light' || saved === 'dark') return saved;
-  } catch {}
+  } catch { }
   return 'dark';
 };
 
 const applyTheme = (theme: Theme) => {
   document.documentElement.setAttribute('data-theme', theme);
-  try { localStorage.setItem('elmeraki-theme', theme); } catch {}
+  try { localStorage.setItem('elmeraki-theme', theme); } catch { }
 };
 
 // Apply initial theme immediately
@@ -58,7 +61,9 @@ export const useStore = create<StoreState>((set, get) => ({
   categories: [],
   statuses: [],
   theme: getInitialTheme(),
+  alertData: null,
 
+  setAlertData: (data) => set({ alertData: data }),
   viewMode: 'kanban',
   setViewMode: (mode) => set({ viewMode: mode }),
 
@@ -73,17 +78,19 @@ export const useStore = create<StoreState>((set, get) => ({
     set({ theme: newTheme });
   },
 
+  refreshData: async () => {},
+
   initialize: async () => {
     // Prevent double-initialization (React StrictMode)
     if (_initialized) return;
     _initialized = true;
 
     const { data: { session } } = await supabase.auth.getSession();
-    
+
     if (!session) {
       set({ isCheckingSession: false });
     }
-    
+
     const loadData = async (userId: string) => {
       const [{ data: profile }, { data: tasks }, { data: profiles }, { data: categories }, { data: statuses }] = await Promise.all([
         supabase.from('profiles').select('id, email, full_name, user_roles(role)').eq('id', userId).single(),
@@ -96,7 +103,7 @@ export const useStore = create<StoreState>((set, get) => ({
         if (Array.isArray(p.user_roles)) return p.user_roles[0]?.role || 'Worker';
         return p.user_roles?.role || 'Worker';
       };
-      
+
       if (profile) set({ currentUser: { ...profile, role: getRole(profile) } as any });
       if (tasks) set({ tasks });
       if (profiles) set({ profiles: profiles.map((p: any) => ({ ...p, role: getRole(p) })) });
@@ -104,6 +111,15 @@ export const useStore = create<StoreState>((set, get) => ({
       if (statuses) set({ statuses });
       set({ isCheckingSession: false });
     };
+
+    set({
+      refreshData: async () => {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          await loadData(session.user.id);
+        }
+      }
+    });
 
     if (session) {
       await loadData(session.user.id);
@@ -139,8 +155,21 @@ export const useStore = create<StoreState>((set, get) => ({
       };
 
       supabase.channel('rt-tasks')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
-          supabase.from('tasks').select('*').then(({ data }) => { if (data) set({ tasks: data }); });
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, (payload) => {
+          set((state) => {
+            const currentTasks = state.tasks;
+            if (payload.eventType === 'INSERT') {
+              if (currentTasks.some(t => t.id === payload.new.id)) return state;
+              return { tasks: [...currentTasks, payload.new as Task] };
+            }
+            if (payload.eventType === 'UPDATE') {
+              return { tasks: currentTasks.map(t => t.id === payload.new.id ? (payload.new as Task) : t) };
+            }
+            if (payload.eventType === 'DELETE') {
+              return { tasks: currentTasks.filter(t => t.id !== payload.old.id) };
+            }
+            return state;
+          });
         })
         .subscribe();
 
@@ -169,48 +198,59 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   addTask: async (taskData) => {
-    // Insert and get the new row back in one call
-    const { data, error } = await supabase.from('tasks').insert([taskData]).select().single();
-    if (error) {
-      alert("Error adding task: " + error.message);
-      return;
-    }
-    if (data) {
-      // Immediately add to local state — no second network call needed
-      set((state) => ({ tasks: [...state.tasks, data] }));
+    try {
+      const { data, error } = await supabase.from('tasks').insert([taskData]).select().single();
+      if (error) {
+        get().setAlertData({ message: "Error adding task: " + error.message, type: 'error' });
+        return { success: false, error };
+      }
+      if (data) {
+        set((state) => ({ tasks: [...state.tasks, data] }));
+        return { success: true, data };
+      }
+      return { success: false };
+    } catch (err: any) {
+      get().setAlertData({ message: "Network or session error: " + err.message, type: 'error' });
+      return { success: false, error: err };
     }
   },
 
   updateTask: async (taskId, updates) => {
     // Optimistic update first for instant UI
+    const prevTasks = get().tasks;
     set((state) => ({
       tasks: state.tasks.map(t => t.id === taskId ? { ...t, ...updates } : t)
     }));
     const { error } = await supabase.from('tasks').update(updates).eq('id', taskId);
     if (error) {
-      alert("Error updating task: " + error.message);
+      set({ tasks: prevTasks });
+      get().setAlertData({ message: "Error updating task: " + error.message, type: 'error' });
     }
   },
 
   updateTaskStatus: async (taskId, status) => {
     // Optimistic update for instant UI
+    const prevTasks = get().tasks;
     set((state) => ({
       tasks: state.tasks.map(t => t.id === taskId ? { ...t, status } : t)
     }));
     const { error } = await supabase.from('tasks').update({ status }).eq('id', taskId);
     if (error) {
-      alert("Error updating status: " + error.message);
+      set({ tasks: prevTasks });
+      get().setAlertData({ message: "Error updating status: " + error.message, type: 'error' });
     }
   },
 
   updateUserRole: async (userId, role) => {
     // Optimistic
+    const prevProfiles = get().profiles;
     set((state) => ({
       profiles: state.profiles.map(p => p.id === userId ? { ...p, role } : p)
     }));
     const { error } = await supabase.from('user_roles').update({ role }).eq('user_id', userId);
     if (error) {
-      alert("Error updating role: " + error.message);
+      set({ profiles: prevProfiles });
+      get().setAlertData({ message: "Error updating role: " + error.message, type: 'error' });
     }
   },
 
@@ -218,36 +258,50 @@ export const useStore = create<StoreState>((set, get) => ({
     const { categories } = get();
     const { data, error } = await supabase.from('categories').insert([{ name, color, sort_order: categories.length }]).select().single();
     if (data) set((state) => ({ categories: [...state.categories, data] }));
-    else if (error) alert("Error adding category: " + error.message);
+    else if (error) get().setAlertData({ message: "Error adding category: " + error.message, type: 'error' });
   },
 
   deleteCategory: async (id) => {
     // Optimistic
+    const prevCategories = get().categories;
     set((state) => ({ categories: state.categories.filter(c => c.id !== id) }));
     const { error } = await supabase.from('categories').delete().eq('id', id);
-    if (error) alert("Error deleting category: " + error.message);
+    if (error) {
+      set({ categories: prevCategories });
+      get().setAlertData({ message: "Error deleting category: " + error.message, type: 'error' });
+    }
   },
 
   addStatus: async (name, color) => {
     const { statuses } = get();
     const { data, error } = await supabase.from('statuses').insert([{ name, color, sort_order: statuses.length }]).select().single();
     if (data) set((state) => ({ statuses: [...state.statuses, data] }));
-    else if (error) alert("Error adding status: " + error.message);
+    else if (error) get().setAlertData({ message: "Error adding status: " + error.message, type: 'error' });
   },
 
   deleteStatus: async (id) => {
     // Optimistic
+    const prevStatuses = get().statuses;
     set((state) => ({ statuses: state.statuses.filter(s => s.id !== id) }));
     const { error } = await supabase.from('statuses').delete().eq('id', id);
-    if (error) alert("Error deleting status: " + error.message);
+    if (error) {
+      set({ statuses: prevStatuses });
+      get().setAlertData({ message: "Error deleting status: " + error.message, type: 'error' });
+    }
   },
 
   deleteTask: async (id) => {
-    // Optimistic
+    const prevTasks = get().tasks;
     set((state) => ({ tasks: state.tasks.filter(t => t.id !== id) }));
-    const { error } = await supabase.from('tasks').delete().eq('id', id);
-    if (error) {
-      alert("Error deleting task: " + error.message);
+    
+    const { error, data } = await supabase.from('tasks').delete().eq('id', id).select();
+    
+    if (error || !data || data.length === 0) {
+      set({ tasks: prevTasks }); // Revert
+      const msg = error ? error.message : "You do not have permission to delete this task or it doesn't exist.";
+      get().setAlertData({ message: "Error deleting task: " + msg, type: 'error' });
+    } else {
+      get().setAlertData({ message: "Task successfully deleted.", type: 'success' });
     }
   },
 
@@ -258,12 +312,12 @@ export const useStore = create<StoreState>((set, get) => ({
   getVisibleTasks: () => {
     const { tasks, currentUser } = get();
     if (!currentUser) return [];
-    
+
     return tasks.filter(task => {
       if (currentUser.role === 'Admin') return true;
-      return (task.assignee_id === currentUser.id) || 
-             (task.creator_id === currentUser.id) ||
-             (task.observers && task.observers.includes(currentUser.id));
+      return (task.assignee_id === currentUser.id) ||
+        (task.creator_id === currentUser.id) ||
+        (task.observers && task.observers.includes(currentUser.id));
     });
   }
 }));
