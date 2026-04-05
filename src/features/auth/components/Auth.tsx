@@ -33,7 +33,7 @@ export const Auth = () => {
             data: {
               full_name: fullName || email.split('@')[0]
             },
-            emailRedirectTo: 'https://tasky-zeta-dun.vercel.app/',
+            emailRedirectTo: window.location.origin,
           }
         });
         if (error) throw error;
@@ -50,7 +50,8 @@ export const Auth = () => {
         setIsLogin(true);
       }
     } catch (err: any) {
-      let msg = err.message || 'Authentication failed. Please check your credentials.';
+      console.error("Auth error:", err);
+      let msg = err.message || 'Authentication failed. Please check your connection.';
       if (msg.toLowerCase().includes('already registered')) {
         msg = 'This email is already registered. Please log in instead.';
       }

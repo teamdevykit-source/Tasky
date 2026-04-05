@@ -108,59 +108,63 @@ export const useStore = create<StoreState>((set, get) => ({
     }
 
     const loadData = async (userId: string) => {
-      // 1. Fetch data
-      let [{ data: profile }, { data: tasks }, { data: profiles }, { data: categories }, { data: statuses }] = await Promise.all([
-        supabase.from('profiles').select('id, email, full_name, job_title, user_roles(role)').eq('id', userId).maybeSingle(),
-        supabase.from('tasks').select('*'),
-        supabase.from('profiles').select('id, email, full_name, job_title, user_roles(role)'),
-        supabase.from('categories').select('*').order('sort_order'),
-        supabase.from('statuses').select('*').order('sort_order')
-      ]);
+      set({ isCheckingSession: true });
+      try {
+        // 1. Fetch data with resilience
+        let [{ data: profile }, { data: tasks }, { data: profiles }, { data: categories }, { data: statuses }] = await Promise.all([
+          supabase.from('profiles').select('id, email, full_name, job_title, user_roles(role)').eq('id', userId).maybeSingle(),
+          supabase.from('tasks').select('*'),
+          supabase.from('profiles').select('id, email, full_name, job_title, user_roles(role)'),
+          supabase.from('categories').select('*').order('sort_order'),
+          supabase.from('statuses').select('*').order('sort_order')
+        ]);
 
-      // 2. Handle missing profile (Lazy creation for invited users who just logged in)
-      if (!profile) {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
-          const userEmail = session.user.email || '';
-          const userFullName = session.user.user_metadata?.full_name || userEmail.split('@')[0];
-          
-          // Use UPSERT for robustness (concurrency)
-          const { error: pError } = await supabase.from('profiles').upsert({
-            id: userId,
-            email: userEmail,
-            full_name: userFullName,
-          });
+        // 2. Handle missing profile (Lazy creation for invited/new users)
+        if (!profile) {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session) {
+            const userEmail = session.user.email || '';
+            const userFullName = session.user.user_metadata?.full_name || userEmail.split('@')[0];
+            
+            const { error: pError } = await supabase.from('profiles').upsert({
+              id: userId,
+              email: userEmail,
+              full_name: userFullName,
+            });
 
-          if (!pError) {
-             // Create default role 'Worker'
-             await supabase.from('user_roles').upsert({ user_id: userId, role: 'Worker' });
-             
-             // Refetch profile with role
-             const { data: finalProfile } = await supabase.from('profiles')
-               .select('id, email, full_name, job_title, user_roles(role)')
-               .eq('id', userId)
-               .single();
-             profile = finalProfile;
-             
-             // Refresh profile list too
-             const { data: updatedProfiles } = await supabase.from('profiles').select('id, email, full_name, job_title, user_roles(role)');
-             profiles = updatedProfiles;
+            if (!pError) {
+               await supabase.from('user_roles').upsert({ user_id: userId, role: 'Worker' });
+               const { data: finalProfile } = await supabase.from('profiles')
+                 .select('id, email, full_name, job_title, user_roles(role)')
+                 .eq('id', userId)
+                 .single();
+               profile = finalProfile;
+               
+               const { data: updatedProfiles } = await supabase.from('profiles').select('id, email, full_name, job_title, user_roles(role)');
+               profiles = updatedProfiles;
+            }
           }
         }
+
+        const getRole = (p: any) => {
+          if (!p) return 'Worker';
+          const r = Array.isArray(p.user_roles) ? p.user_roles[0]?.role : p.user_roles?.role;
+          return r || 'Worker';
+        };
+
+        // 3. Selective State Updates (Avoid crashing if one table fails)
+        if (profile) set({ currentUser: { ...profile, role: getRole(profile) } as any });
+        if (tasks) set({ tasks });
+        if (profiles) set({ profiles: profiles.map((p: any) => ({ ...p, role: getRole(p) })) });
+        if (categories) set({ categories });
+        if (statuses) set({ statuses });
+
+      } catch (error) {
+        console.error("Critical loading error:", error);
+        get().setAlertData({ message: "Network error: Connection to workspace failed.", type: 'error' });
+      } finally {
+        set({ isCheckingSession: false });
       }
-
-      const getRole = (p: any) => {
-        if (!p) return 'Worker';
-        if (Array.isArray(p.user_roles)) return p.user_roles[0]?.role || 'Worker';
-        return p.user_roles?.role || 'Worker';
-      };
-
-      if (profile) set({ currentUser: { ...profile, role: getRole(profile) } as any });
-      if (tasks) set({ tasks });
-      if (profiles) set({ profiles: profiles.map((p: any) => ({ ...p, role: getRole(p) })) });
-      if (categories) set({ categories });
-      if (statuses) set({ statuses });
-      set({ isCheckingSession: false });
     };
 
     set({
