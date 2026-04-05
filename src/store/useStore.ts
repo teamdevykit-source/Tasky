@@ -184,8 +184,12 @@ export const useStore = create<StoreState>((set, get) => ({
       }
     });
 
-    // Optional: Realtime subscriptions (non-blocking, wrapped in try-catch)
-    // These enhance the experience but are NOT required for CRUD to work.
+    // 4. Hybrid Sync Fallback: Auto-refresh data every 20 seconds
+    setInterval(() => {
+      get().refreshData?.();
+    }, 20000); 
+
+    // Realtime subscriptions (non-blocking)
     try {
       const handleProfileUpdate = () => {
         supabase.from('profiles').select('id, email, full_name, job_title, user_roles(role)').then(({ data }) => {
@@ -255,10 +259,9 @@ export const useStore = create<StoreState>((set, get) => ({
         get().setAlertData({ message: "Error adding task: " + error.message, type: 'error' });
         return { success: false, error };
       }
-      if (data) {
         set((state) => ({ tasks: [...state.tasks, data] }));
+        get().refreshData(); // Sync for non-realtime users
         return { success: true, data };
-      }
       return { success: false };
     } catch (err: any) {
       get().setAlertData({ message: "Network or session error: " + err.message, type: 'error' });
@@ -276,6 +279,8 @@ export const useStore = create<StoreState>((set, get) => ({
     if (error) {
       set({ tasks: prevTasks });
       get().setAlertData({ message: "Error updating task: " + error.message, type: 'error' });
+    } else {
+      get().refreshData(); // Sync for non-realtime users
     }
   },
 
@@ -289,6 +294,8 @@ export const useStore = create<StoreState>((set, get) => ({
     if (error) {
       set({ tasks: prevTasks });
       get().setAlertData({ message: "Error updating status: " + error.message, type: 'error' });
+    } else {
+      get().refreshData(); // Sync for non-realtime users
     }
   },
 

@@ -47,34 +47,34 @@
    LIGHT THEME OVERRIDES
 ========================================== */
 [data-theme="light"] {
-  --primary:       #6366f1;
-  --primary-dark:  #4f46e5;
-  --primary-light: rgba(99,102,241,0.08);
-  --primary-glow:  rgba(99,102,241,0.15);
-  --danger:        #ef4444;
-  --success:       #10b981;
-  --warning:       #f59e0b;
+  --primary:       #4f46e5;
+  --primary-dark:  #4338ca;
+  --primary-light: rgba(79, 70, 229, 0.08);
+  --primary-glow:  rgba(79, 70, 229, 0.05); /* Reduced glow */
+  --danger:        #dc2626;
+  --success:       #059669;
+  --warning:       #d97706;
 
-  --bg:            #f5f7fa;
-  --bg-elevated:   #ffffff;
+  --bg:            #f1f5f9; /* Darker, more neutral background */
+  --bg-elevated:   #f8fafc;
   --surface:       #ffffff;
-  --surface-2:     #f8fafc;
-  --surface-3:     #f1f5f9;
-  --border:        #e5e7eb;
-  --border-strong: #d1d5db;
+  --surface-2:     #f1f5f9;
+  --surface-3:     #e2e8f0;
+  --border:        #e2e8f0;
+  --border-strong: #cbd5e1;
 
-  --text-1:        #111827;
-  --text-2:        #374151;
-  --text-3:        #6b7280;
-  --text-4:        #9ca3af;
-  --text-muted:    #9ca3af;
+  --text-1:        #0f172a;
+  --text-2:        #334155;
+  --text-3:        #475569;
+  --text-4:        #64748b;
+  --text-muted:    #94a3b8;
 
-  --shadow-xs:  0 1px 2px rgba(0,0,0,0.04);
-  --shadow-sm:  0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-  --shadow-md:  0 4px 6px -1px rgba(0,0,0,0.06), 0 2px 4px -2px rgba(0,0,0,0.04);
-  --shadow-lg:  0 10px 15px -3px rgba(0,0,0,0.06), 0 4px 6px -4px rgba(0,0,0,0.04);
-  --shadow-xl:  0 20px 25px -5px rgba(0,0,0,0.08), 0 8px 10px -6px rgba(0,0,0,0.06);
-  --shadow-glow: 0 0 30px rgba(99,102,241,0.08);
+  --shadow-xs:  0 1px 2px rgba(0,0,0,0.05);
+  --shadow-sm:  0 1px 3px rgba(0,0,0,0.1);
+  --shadow-md:  0 4px 6px -1px rgba(0,0,0,0.1);
+  --shadow-lg:  0 10px 15px -3px rgba(0,0,0,0.1);
+  --shadow-xl:  0 20px 25px -5px rgba(0,0,0,0.1);
+  --shadow-glow: none; /* Disabled for light mode to reduce glare */
 }
 
 /* Smooth theme transition */
@@ -194,7 +194,7 @@ body {
   right: 0;
   width: 60%;
   height: 60%;
-  background: radial-gradient(ellipse at top right, rgba(99,102,241,0.06) 0%, transparent 60%);
+  background: radial-gradient(ellipse at top right, var(--primary-glow) 0%, transparent 60%);
   pointer-events: none;
   z-index: 0;
 }
