@@ -7,6 +7,7 @@ type Theme = 'light' | 'dark';
 interface StoreState {
   currentUser: Profile | null;
   isCheckingSession: boolean;
+  isLoaded: boolean;
   profiles: Profile[];
   tasks: Task[];
   categories: Category[];
@@ -69,6 +70,7 @@ let _initialized = false;
 export const useStore = create<StoreState>((set, get) => ({
   currentUser: null,
   isCheckingSession: true,
+  isLoaded: false,
   profiles: [],
   tasks: [],
   categories: [],
@@ -108,10 +110,15 @@ export const useStore = create<StoreState>((set, get) => ({
     }
 
     const loadData = async (userId: string) => {
+      // Avoid double-loading if already in progress
+      if (get().isLoaded) return;
+      
       set({ isCheckingSession: true });
       try {
-        // 1. Fetch data with resilience
-        let [{ data: profile }, { data: tasks }, { data: profiles }, { data: categories }, { data: statuses }] = await Promise.all([
+        console.log("🚀 Starting workspace load for:", userId);
+        
+        // 1. Fetch data with a 10-second timeout to prevent 'infinite loading'
+        const dataPromise = Promise.all([
           supabase.from('profiles').select('id, email, full_name, job_title, user_roles(role)').eq('id', userId).maybeSingle(),
           supabase.from('tasks').select('*'),
           supabase.from('profiles').select('id, email, full_name, job_title, user_roles(role)'),
@@ -119,30 +126,28 @@ export const useStore = create<StoreState>((set, get) => ({
           supabase.from('statuses').select('*').order('sort_order')
         ]);
 
-        // 2. Handle missing profile (Lazy creation for invited/new users)
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("Timeout: Connection to workspace took too long (10s limit)")), 10000)
+        );
+
+        const results = await Promise.race([dataPromise, timeoutPromise]) as any[];
+        let [{ data: profile }, { data: tasks }, { data: profiles }, { data: categories }, { data: statuses }] = results;
+
+        // 2. Handle missing profile (Lazy creation)
         if (!profile) {
           const { data: { session } } = await supabase.auth.getSession();
           if (session) {
             const userEmail = session.user.email || '';
             const userFullName = session.user.user_metadata?.full_name || userEmail.split('@')[0];
             
-            const { error: pError } = await supabase.from('profiles').upsert({
-              id: userId,
-              email: userEmail,
-              full_name: userFullName,
-            });
-
-            if (!pError) {
-               await supabase.from('user_roles').upsert({ user_id: userId, role: 'Worker' });
-               const { data: finalProfile } = await supabase.from('profiles')
-                 .select('id, email, full_name, job_title, user_roles(role)')
-                 .eq('id', userId)
-                 .single();
-               profile = finalProfile;
-               
-               const { data: updatedProfiles } = await supabase.from('profiles').select('id, email, full_name, job_title, user_roles(role)');
-               profiles = updatedProfiles;
-            }
+            await supabase.from('profiles').upsert({ id: userId, email: userEmail, full_name: userFullName });
+            await supabase.from('user_roles').upsert({ user_id: userId, role: 'Worker' });
+            
+            // Refetch
+            const { data: finalP } = await supabase.from('profiles').select('id, email, full_name, job_title, user_roles(role)').eq('id', userId).single();
+            profile = finalP;
+            const { data: allP } = await supabase.from('profiles').select('id, email, full_name, job_title, user_roles(role)');
+            profiles = allP;
           }
         }
 
@@ -152,18 +157,24 @@ export const useStore = create<StoreState>((set, get) => ({
           return r || 'Worker';
         };
 
-        // 3. Selective State Updates (Avoid crashing if one table fails)
+        // 3. Selective State Updates
         if (profile) set({ currentUser: { ...profile, role: getRole(profile) } as any });
         if (tasks) set({ tasks });
         if (profiles) set({ profiles: profiles.map((p: any) => ({ ...p, role: getRole(p) })) });
         if (categories) set({ categories });
         if (statuses) set({ statuses });
 
+        set({ isLoaded: true });
       } catch (error) {
-        console.error("Critical loading error:", error);
-        get().setAlertData({ message: "Network error: Connection to workspace failed.", type: 'error' });
+        console.error("❌ Loading Error:", error);
+        get().setAlertData({ 
+          message: "Could not connect to database. Please check your internet or retry.", 
+          type: 'error' 
+        });
       } finally {
         set({ isCheckingSession: false });
+        // Emergency release if somehow catch failed
+        setTimeout(() => set({ isCheckingSession: false }), 100);
       }
     };
 
