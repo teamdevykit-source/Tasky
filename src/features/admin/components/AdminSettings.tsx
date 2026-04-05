@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useStore } from '../../../store/useStore';
 import { Plus, Trash2, Settings, Users, Layers, Tag, ShieldCheck } from 'lucide-react';
+import { ConfirmationModal } from '../../../components/Shared/ConfirmationModal';
 
 export const AdminSettings: React.FC = () => {
   const currentUser = useStore(s => s.currentUser);
@@ -22,6 +23,19 @@ export const AdminSettings: React.FC = () => {
   const [newCategoryColor, setNewCategoryColor] = useState('#818cf8');
   const [newStatus, setNewStatus] = useState('');
   const [newStatusColor, setNewStatusColor] = useState('#818cf8');
+
+  // Modal State
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
 
   if (currentUser?.role !== 'Admin') {
     return (
@@ -183,9 +197,12 @@ export const AdminSettings: React.FC = () => {
                             borderRadius: 'var(--radius-sm)', transition: 'var(--transition)'
                           }}
                           onClick={() => {
-                            if (confirm(`Delete user "${user.full_name}" and remove them from all tasks?`)) {
-                              deleteUser(user.id);
-                            }
+                            setConfirmModal({
+                              isOpen: true,
+                              title: 'Delete User',
+                              message: `Are you sure you want to delete user "${user.full_name}" and remove them from all tasks? This action cannot be undone.`,
+                              onConfirm: () => deleteUser(user.id)
+                            });
                           }}
                           title="Remove user"
                         >
@@ -268,7 +285,12 @@ export const AdminSettings: React.FC = () => {
                             borderRadius: 'var(--radius-sm)', transition: 'var(--transition)' 
                           }}
                           onClick={() => {
-                            if (confirm(`Delete category "${cat.name}"?`)) deleteCategory(cat.id);
+                            setConfirmModal({
+                              isOpen: true,
+                              title: 'Delete Category',
+                              message: `Are you sure you want to delete category "${cat.name}"? Tasks in this category will remain, but the category will be removed.`,
+                              onConfirm: () => deleteCategory(cat.id)
+                            });
                           }}
                         >
                           <Trash2 size={15} />
@@ -356,7 +378,12 @@ export const AdminSettings: React.FC = () => {
                             borderRadius: 'var(--radius-sm)', transition: 'var(--transition)' 
                           }}
                           onClick={() => {
-                            if (confirm(`Delete status "${s.name}"?`)) deleteStatus(s.id);
+                            setConfirmModal({
+                              isOpen: true,
+                              title: 'Delete Status',
+                              message: `Are you sure you want to delete status "${s.name}"? Tasks currently with this status will be reset.`,
+                              onConfirm: () => deleteStatus(s.id)
+                            });
                           }}
                         >
                           <Trash2 size={15} />
@@ -377,6 +404,14 @@ export const AdminSettings: React.FC = () => {
             </div>
           </div>
         )}
+        {/* Confirmation Modal */}
+        <ConfirmationModal
+          isOpen={confirmModal.isOpen}
+          title={confirmModal.title}
+          message={confirmModal.message}
+          onConfirm={confirmModal.onConfirm}
+          onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+        />
       </div>
     </div>
   );

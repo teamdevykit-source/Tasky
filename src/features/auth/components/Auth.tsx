@@ -43,7 +43,10 @@ export const Auth = () => {
           throw new Error('This email is already registered. Please log in instead.');
         }
 
-        alert('Registration successful! Please check your email or log in.');
+        useStore.getState().setAlertData({ 
+          message: 'Registration successful! Please check your email or log in.', 
+          type: 'success' 
+        });
         setIsLogin(true);
       }
     } catch (err: any) {

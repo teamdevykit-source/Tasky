@@ -108,14 +108,49 @@ export const useStore = create<StoreState>((set, get) => ({
     }
 
     const loadData = async (userId: string) => {
-      const [{ data: profile }, { data: tasks }, { data: profiles }, { data: categories }, { data: statuses }] = await Promise.all([
-        supabase.from('profiles').select('id, email, full_name, job_title, user_roles(role)').eq('id', userId).single(),
+      // 1. Fetch data
+      let [{ data: profile }, { data: tasks }, { data: profiles }, { data: categories }, { data: statuses }] = await Promise.all([
+        supabase.from('profiles').select('id, email, full_name, job_title, user_roles(role)').eq('id', userId).maybeSingle(),
         supabase.from('tasks').select('*'),
         supabase.from('profiles').select('id, email, full_name, job_title, user_roles(role)'),
         supabase.from('categories').select('*').order('sort_order'),
         supabase.from('statuses').select('*').order('sort_order')
       ]);
+
+      // 2. Handle missing profile (Lazy creation for invited users who just logged in)
+      if (!profile) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          const userEmail = session.user.email || '';
+          const userFullName = session.user.user_metadata?.full_name || userEmail.split('@')[0];
+          
+          // Use UPSERT for robustness (concurrency)
+          const { error: pError } = await supabase.from('profiles').upsert({
+            id: userId,
+            email: userEmail,
+            full_name: userFullName,
+          });
+
+          if (!pError) {
+             // Create default role 'Worker'
+             await supabase.from('user_roles').upsert({ user_id: userId, role: 'Worker' });
+             
+             // Refetch profile with role
+             const { data: finalProfile } = await supabase.from('profiles')
+               .select('id, email, full_name, job_title, user_roles(role)')
+               .eq('id', userId)
+               .single();
+             profile = finalProfile;
+             
+             // Refresh profile list too
+             const { data: updatedProfiles } = await supabase.from('profiles').select('id, email, full_name, job_title, user_roles(role)');
+             profiles = updatedProfiles;
+          }
+        }
+      }
+
       const getRole = (p: any) => {
+        if (!p) return 'Worker';
         if (Array.isArray(p.user_roles)) return p.user_roles[0]?.role || 'Worker';
         return p.user_roles?.role || 'Worker';
       };
@@ -284,10 +319,25 @@ export const useStore = create<StoreState>((set, get) => ({
 
   inviteUser: async (email) => {
     try {
-      // Create user or send magic link depending on Supabase settings
+      // 1. Check if email already exists in profiles (application users)
+      const { data: existing } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('email', email)
+        .maybeSingle();
+
+      if (existing) {
+        get().setAlertData({ message: `User with email ${email} is already in the workspace.`, type: 'error' });
+        return;
+      }
+
+      // 2. Send invitation via OTP / Magic Link
+      // We route them to origin/login explicitly to ensure they see the app entrance
       const { error } = await supabase.auth.signInWithOtp({ 
         email,
-        options: { emailRedirectTo: window.location.origin }
+        options: { 
+          emailRedirectTo: window.location.origin,
+        }
       });
       if (error) throw error;
       get().setAlertData({ message: `Invitation sent to ${email} successfully!`, type: 'success' });
@@ -334,20 +384,17 @@ export const useStore = create<StoreState>((set, get) => ({
 
   deleteUser: async (userId: string) => {
     try {
-      // First delete from user_roles to prevent FK issues if set up
-      const { error: roleError } = await supabase.from('user_roles').delete().eq('user_id', userId);
-      if (roleError) throw roleError;
-
-      const { error } = await supabase.from('profiles').delete().eq('id', userId);
+      // Use RPC for complete erasure (including auth.users)
+      const { error } = await supabase.rpc('delete_user_entirely', { target_user_id: userId });
       if (error) throw error;
       
       set({ 
         profiles: get().profiles.filter(p => p.id !== userId),
         tasks: get().tasks.map(t => t.assignee_id === userId ? { ...t, assignee_id: null } : t)
       });
-      set({ alertData: { message: 'User removed from workspace', type: 'success' } });
+      set({ alertData: { message: 'User successfully erased from workspace', type: 'success' } });
     } catch (err: any) {
-      set({ alertData: { message: err.message || 'Failed to delete user', type: 'error' } });
+      set({ alertData: { message: err.message || 'Failed to erase user', type: 'error' } });
     }
   },
 
