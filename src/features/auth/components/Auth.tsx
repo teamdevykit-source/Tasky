@@ -31,6 +31,8 @@ export const Auth = () => {
       if (isLogin) {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
+        // Force refresh to clear any lingering auth state and land on dashboard
+        window.location.assign('/'); 
       } else {
         const { data, error } = await supabase.auth.signUp({
           email,
