@@ -16,8 +16,9 @@ interface StoreState {
   alertData: { message: string, type: 'error' | 'success' } | null;
 
   setAlertData: (data: { message: string, type: 'error' | 'success' } | null) => void;
-  viewMode: 'dashboard' | 'kanban' | 'scrum' | 'settings' | 'my-tasks';
-  setViewMode: (mode: 'dashboard' | 'kanban' | 'scrum' | 'settings' | 'my-tasks') => void;
+  viewMode: 'dashboard' | 'kanban' | 'scrum' | 'settings' | 'my-tasks' | 'profile';
+  setViewMode: (mode: 'dashboard' | 'kanban' | 'scrum' | 'settings' | 'my-tasks' | 'profile') => void;
+  updatePassword: (password: string) => Promise<void>;
   setTheme: (theme: Theme) => void;
   toggleTheme: () => void;
   getVisibleTasks: () => Task[];
@@ -57,7 +58,7 @@ applyTheme(getInitialTheme());
 const getInitialViewMode = (): StoreState['viewMode'] => {
   try {
     const saved = localStorage.getItem('elmeraki-view');
-    if (saved && ['dashboard', 'kanban', 'scrum', 'settings', 'my-tasks'].includes(saved)) {
+    if (saved && ['dashboard', 'kanban', 'scrum', 'settings', 'my-tasks', 'profile'].includes(saved)) {
       return saved as StoreState['viewMode'];
     }
   } catch { }
@@ -80,6 +81,14 @@ export const useStore = create<StoreState>((set, get) => ({
 
   setAlertData: (data) => set({ alertData: data }),
   viewMode: getInitialViewMode(),
+  updatePassword: async (password) => {
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) {
+      set({ alertData: { message: error.message, type: 'error' } });
+      throw error;
+    }
+    set({ alertData: { message: 'Password updated successfully!', type: 'success' } });
+  },
   setViewMode: (mode) => {
     try { localStorage.setItem('elmeraki-view', mode); } catch { }
     set({ viewMode: mode });
@@ -105,8 +114,18 @@ export const useStore = create<StoreState>((set, get) => ({
 
     const { data: { session } } = await supabase.auth.getSession();
 
+    // Check if we should force sign up mode (usually after clicking an invitation magic link)
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('type') === 'signup' && session) {
+      console.log("🔄 Invitation detected: Clearing magic session to force password set via Sign-Up.");
+      await supabase.auth.signOut();
+      set({ isCheckingSession: false });
+      return;
+    }
+
     if (!session) {
       set({ isCheckingSession: false });
+      return; // Added return to prevent further execution without session
     }
 
     const loadData = async (userId: string) => {
@@ -358,7 +377,7 @@ export const useStore = create<StoreState>((set, get) => ({
       const { error } = await supabase.auth.signInWithOtp({ 
         email,
         options: { 
-          emailRedirectTo: `${window.location.origin}?type=signup`,
+          emailRedirectTo: `${window.location.origin}?type=signup&email=${encodeURIComponent(email)}`,
         }
       });
       if (error) throw error;

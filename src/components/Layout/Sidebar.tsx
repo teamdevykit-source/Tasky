@@ -193,12 +193,21 @@ export const Sidebar: React.FC<SidebarProps> = ({ onOpenCreateModal, isOpen, onC
         </button>
 
         {/* User Profile */}
-        <div style={{ 
-          display: 'flex', alignItems: 'center', gap: '0.625rem', 
-          padding: '0.75rem', background: 'var(--surface)', 
-          borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' 
-        }}>
-          <div className="avatar" style={{ width: '32px', height: '32px', fontSize: '0.75rem' }}>
+        <div 
+          onClick={() => setViewMode('profile')}
+          className={`sidebar-user-section ${viewMode === 'profile' ? 'active' : ''}`}
+          style={{ 
+            display: 'flex', alignItems: 'center', gap: '0.625rem', 
+            padding: '0.75rem', background: viewMode === 'profile' ? 'var(--primary-light)' : 'var(--surface)', 
+            borderRadius: 'var(--radius-md)', border: `1px solid ${viewMode === 'profile' ? 'var(--primary)' : 'var(--border)'}`,
+            cursor: 'pointer', transition: 'var(--transition)'
+          }}
+        >
+          <div className="avatar" style={{ 
+            width: '32px', height: '32px', fontSize: '0.75rem',
+            background: viewMode === 'profile' ? 'var(--primary)' : 'var(--surface-3)',
+            color: viewMode === 'profile' ? 'white' : 'var(--text-1)'
+          }}>
             {currentUser.full_name.charAt(0).toUpperCase()}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -208,8 +217,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ onOpenCreateModal, isOpen, onC
             }}>
               {currentUser.full_name}
             </div>
-            <div style={{ fontSize: '0.65rem', color: 'var(--text-4)', fontWeight: 500 }}>
-              {currentUser.job_title ? `${currentUser.job_title} (${currentUser.role})` : currentUser.role}
+            <div style={{ fontSize: '0.65rem', color: viewMode === 'profile' ? 'var(--primary)' : 'var(--text-4)', fontWeight: 500 }}>
+              {currentUser.job_title ? `${currentUser.job_title}` : currentUser.role}
             </div>
           </div>
         </div>

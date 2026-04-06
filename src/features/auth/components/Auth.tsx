@@ -9,7 +9,10 @@ export const Auth = () => {
   const isDark = theme === 'dark';
 
   const [loading, setLoading] = useState(false);
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('email') || '';
+  });
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [isLogin, setIsLogin] = useState(() => {
