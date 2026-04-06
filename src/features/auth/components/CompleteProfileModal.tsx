@@ -23,6 +23,12 @@ export const CompleteProfileModal: React.FC = () => {
     }
   }, []);
 
+  React.useEffect(() => {
+    if (currentUser?.full_name && !fullName) {
+      setFullName(currentUser.full_name);
+    }
+  }, [currentUser?.full_name]);
+
   if (!currentUser) return null;
 
   const handleComplete = async (e: React.FormEvent) => {
