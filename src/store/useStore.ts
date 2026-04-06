@@ -16,8 +16,8 @@ interface StoreState {
   alertData: { message: string, type: 'error' | 'success' } | null;
 
   setAlertData: (data: { message: string, type: 'error' | 'success' } | null) => void;
-  viewMode: 'dashboard' | 'kanban' | 'scrum' | 'settings';
-  setViewMode: (mode: 'dashboard' | 'kanban' | 'scrum' | 'settings') => void;
+  viewMode: 'dashboard' | 'kanban' | 'scrum' | 'settings' | 'my-tasks';
+  setViewMode: (mode: 'dashboard' | 'kanban' | 'scrum' | 'settings' | 'my-tasks') => void;
   setTheme: (theme: Theme) => void;
   toggleTheme: () => void;
   getVisibleTasks: () => Task[];
@@ -57,7 +57,7 @@ applyTheme(getInitialTheme());
 const getInitialViewMode = (): StoreState['viewMode'] => {
   try {
     const saved = localStorage.getItem('elmeraki-view');
-    if (saved === 'dashboard' || saved === 'kanban' || saved === 'scrum' || saved === 'settings') {
+    if (saved && ['dashboard', 'kanban', 'scrum', 'settings', 'my-tasks'].includes(saved)) {
       return saved as StoreState['viewMode'];
     }
   } catch { }
@@ -358,7 +358,7 @@ export const useStore = create<StoreState>((set, get) => ({
       const { error } = await supabase.auth.signInWithOtp({ 
         email,
         options: { 
-          emailRedirectTo: window.location.origin,
+          emailRedirectTo: `${window.location.origin}?type=signup`,
         }
       });
       if (error) throw error;
@@ -444,6 +444,11 @@ export const useStore = create<StoreState>((set, get) => ({
     if (!currentUser) return [];
 
     return tasks.filter(task => {
+      // If it's a self-task, ONLY the creator can see it, regardless of role.
+      if (task.is_self_task) {
+        return task.creator_id === currentUser.id;
+      }
+      
       if (currentUser.role === 'Admin') return true;
       return (task.assignee_id === currentUser.id) ||
         (task.creator_id === currentUser.id) ||

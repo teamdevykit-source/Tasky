@@ -4,6 +4,7 @@ import { TaskBoard } from './features/tasks/components/TaskBoard';
 import { CreateTaskModal } from './features/tasks/components/CreateTaskModal';
 import { TaskDetailModal } from './features/tasks/components/TaskDetailModal';
 import { DashboardAnalytics } from './features/dashboard/components/DashboardAnalytics';
+import { MyTasksView } from './features/tasks/components/MyTasksView';
 import { Auth } from './features/auth/components/Auth';
 import { AdminSettings } from './features/admin/components/AdminSettings';
 import { useStore } from './store/useStore';
@@ -112,6 +113,8 @@ function App() {
           <AdminSettings />
         ) : viewMode === 'dashboard' ? (
           <DashboardAnalytics />
+        ) : viewMode === 'my-tasks' ? (
+          <MyTasksView onSelectTask={setSelectedTaskId} />
         ) : (
           <TaskBoard onSelectTask={setSelectedTaskId} />
         )}

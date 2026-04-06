@@ -1,6 +1,6 @@
 import React from 'react';
 import { useStore } from '../../store/useStore';
-import { Plus, KanbanSquare, List, Settings, LogOut, Zap, Sun, Moon, X, LayoutDashboard } from 'lucide-react';
+import { Plus, KanbanSquare, List, Settings, LogOut, Zap, Sun, Moon, X, LayoutDashboard, Lock } from 'lucide-react';
 
 interface SidebarProps {
   onOpenCreateModal: () => void;
@@ -96,6 +96,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ onOpenCreateModal, isOpen, onC
           >
             <LayoutDashboard size={17} />
             <span>Dashboard</span>
+          </button>
+          
+          <button 
+            className={`nav-item ${viewMode === 'my-tasks' ? 'active' : ''}`}
+            onClick={() => setViewMode('my-tasks')}
+            style={{ position: 'relative' }}
+          >
+            <Lock size={17} />
+            <span>My Tasks</span>
+            <div style={{ marginLeft: 'auto', background: 'var(--primary-light)', padding: '0.1rem 0.4rem', borderRadius: 'var(--radius-full)', fontSize: '0.65rem', fontWeight: 700, color: 'var(--primary)' }}>Private</div>
           </button>
 
           <button 

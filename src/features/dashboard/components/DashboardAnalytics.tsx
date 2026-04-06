@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { useStore } from '../../../store/useStore';
-import { BarChart, Activity, Clock, Users, Zap, LayoutDashboard, Target, ShieldCheck, ChevronDown, ChevronUp } from 'lucide-react';
+import { BarChart, Activity, Clock, Users, Zap, LayoutDashboard, Target, ShieldCheck, ChevronDown, ChevronUp, Lock } from 'lucide-react';
 
 export const DashboardAnalytics: React.FC = () => {
   const [expandedRole, setExpandedRole] = React.useState<'Admin' | 'Worker' | null>(null);
@@ -12,12 +12,17 @@ export const DashboardAnalytics: React.FC = () => {
 
   const visibleTasks = useMemo(() => {
     if (!currentUser) return [];
-    if (currentUser.role === 'Admin') return tasks;
-    return tasks.filter(t => 
-      t.assignee_id === currentUser.id || 
-      t.creator_id === currentUser.id || 
-      (t.observers && t.observers.includes(currentUser.id))
-    );
+    return tasks.filter(t => {
+      // If it's a self-task, ONLY the creator can see it, regardless of role.
+      if (t.is_self_task) {
+        return t.creator_id === currentUser.id;
+      }
+      
+      if (currentUser.role === 'Admin') return true;
+      return (t.assignee_id === currentUser.id) || 
+             (t.creator_id === currentUser.id) || 
+             (t.observers && t.observers.includes(currentUser.id));
+    });
   }, [tasks, currentUser]);
 
   const stats = useMemo(() => {
@@ -67,7 +72,9 @@ export const DashboardAnalytics: React.FC = () => {
       Worker: profiles.filter(p => p.role === 'Worker').length
     };
 
-    return { total, byStatus, byCategory, unassigned, myTasks, totalUsers: profiles.length, byRole };
+    const selfTasks = visibleTasks.filter(t => t.is_self_task).length;
+
+    return { total, byStatus, byCategory, unassigned, myTasks, totalUsers: profiles.length, byRole, selfTasks };
   }, [visibleTasks, statuses, categories, currentUser]);
 
   if (!currentUser) return null;
@@ -137,6 +144,12 @@ export const DashboardAnalytics: React.FC = () => {
           title="Unassigned" 
           value={stats.unassigned} 
           bg="rgba(248,113,113,0.1)"
+        />
+        <MetricCard 
+          icon={<Lock size={20} color="#f472b6" />} 
+          title="Self Tasks" 
+          value={stats.selfTasks} 
+          bg="rgba(244,114,182,0.1)"
         />
         {currentUser.role === 'Admin' && (
           <MetricCard 

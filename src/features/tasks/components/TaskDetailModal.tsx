@@ -1,6 +1,6 @@
 import React from 'react';
 import { useStore } from '../../../store/useStore';
-import { X, Clock, Trash2, CheckCircle2, AlignLeft, Eye } from 'lucide-react';
+import { X, Clock, Trash2, CheckCircle2, AlignLeft, Eye, Lock } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -21,7 +21,13 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
   const assignee = profiles.find(u => u.id === task.assignee_id);
   const creator = profiles.find(u => u.id === task.creator_id);
   const isObserver = task.observers?.includes(currentUser.id) && currentUser.role !== 'Admin';
-  const canEdit = !isObserver && (currentUser.role === 'Admin' || currentUser.id === task.assignee_id || currentUser.id === task.creator_id);
+  
+  // PERMISSIONS:
+  // 1. If self-task: ONLY the creator can edit/delete.
+  // 2. If regular task: Creator, Assignee, or Admin can edit/delete.
+  const canEdit = task.is_self_task 
+    ? (currentUser.id === task.creator_id)
+    : (!isObserver && (currentUser.role === 'Admin' || currentUser.id === task.assignee_id || currentUser.id === task.creator_id));
   const catColor = categories.find(c => c.name === task.category)?.color || '#64748b';
   const statColor = statuses.find(s => s.name === task.status)?.color || '#64748b';
 
@@ -72,6 +78,16 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
                 textTransform: 'uppercase', letterSpacing: '0.05em' 
               }}>
                 {task.category}
+              </div>
+            )}
+            {task.is_self_task && (
+              <div style={{ 
+                background: 'rgba(255,255,255,0.2)', padding: '0.25rem 0.7rem', 
+                borderRadius: 'var(--radius-full)', fontSize: '0.7rem', fontWeight: 700, 
+                textTransform: 'uppercase', letterSpacing: '0.08em', display: 'flex', alignItems: 'center', gap: '0.35rem',
+                border: '1px solid rgba(255,255,255,0.3)'
+              }}>
+                <Lock size={12} /> Self Task
               </div>
             )}
           </div>
@@ -195,26 +211,28 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
             </div>
 
             {/* Observers */}
-            <div>
-              <h3 style={metaLabel}>
-                <Eye size={12} style={{ display: 'inline', marginRight: '0.3rem', opacity: 0.5 }} />
-                Observers
-              </h3>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
-                {task.observers && task.observers.length > 0 ? (
-                  task.observers.map(id => {
-                    const u = profiles.find(p => p.id === id);
-                    return (
-                      <div key={id} className="avatar" title={u?.full_name} style={{ width: '26px', height: '26px', fontSize: '0.6rem' }}>
-                        {u?.full_name.charAt(0)}
-                      </div>
-                    );
-                  })
-                ) : (
-                  <span style={{ fontSize: '0.78rem', color: 'var(--text-4)' }}>No observers.</span>
-                )}
+            {!task.is_self_task && (
+              <div>
+                <h3 style={metaLabel}>
+                  <Eye size={12} style={{ display: 'inline', marginRight: '0.3rem', opacity: 0.5 }} />
+                  Observers
+                </h3>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                  {task.observers && task.observers.length > 0 ? (
+                    task.observers.map(id => {
+                      const u = profiles.find(p => p.id === id);
+                      return (
+                        <div key={id} className="avatar" title={u?.full_name} style={{ width: '26px', height: '26px', fontSize: '0.6rem' }}>
+                          {u?.full_name.charAt(0)}
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-4)' }}>No observers.</span>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Status Control */}
             <div style={{ marginTop: 'auto' }}>

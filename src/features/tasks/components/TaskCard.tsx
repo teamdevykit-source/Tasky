@@ -1,7 +1,7 @@
 import React from 'react';
 import type { Task } from '../../../lib/supabase';
 import { useStore } from '../../../store/useStore';
-import { Calendar, Eye, GripVertical } from 'lucide-react';
+import { Calendar, Eye, GripVertical, Lock } from 'lucide-react';
 
 export const TaskCard: React.FC<{ task: Task, onClick: () => void }> = ({ task, onClick }) => {
   const currentUser = useStore(s => s.currentUser);
@@ -13,7 +13,14 @@ export const TaskCard: React.FC<{ task: Task, onClick: () => void }> = ({ task, 
   const assignee = profiles.find(u => u.id === task.assignee_id);
   
   const isObserver = task.observers?.includes(currentUser?.id || '') && currentUser?.role !== 'Admin';
-  const canEditStatus = !isObserver && (currentUser?.role === 'Admin' || currentUser?.id === task.assignee_id || currentUser?.id === task.creator_id);
+  
+  // PERMISSIONS:
+  // 1. If self-task: ONLY the creator can edit/drag.
+  // 2. If regular task: Creator, Assignee, or Admin can edit/drag.
+  const canEditStatus = task.is_self_task 
+    ? (currentUser?.id === task.creator_id)
+    : (!isObserver && (currentUser?.role === 'Admin' || currentUser?.id === task.assignee_id || currentUser?.id === task.creator_id));
+  
   const isLocked = !canEditStatus;
 
   const currentStatus = statuses.find(s => s.name === task.status);
@@ -52,6 +59,7 @@ export const TaskCard: React.FC<{ task: Task, onClick: () => void }> = ({ task, 
           </span>
         ) : <span />}
         <div style={{ display: 'flex', gap: '0.375rem', alignItems: 'center' }}>
+          {task.is_self_task && <Lock size={11} style={{ color: 'var(--primary)', opacity: 0.8 }} />}
           {isObserver && <Eye size={11} style={{ color: 'var(--success)', opacity: 0.7 }} />}
           {!isLocked && <GripVertical size={11} style={{ color: 'var(--text-4)', opacity: 0.4 }} />}
         </div>

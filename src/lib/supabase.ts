@@ -46,6 +46,7 @@ export interface Task {
   status: string;
   category: string | null;
   observers: string[];
+  is_self_task?: boolean;
   start_date?: string;
   end_date?: string;
   created_at: string;

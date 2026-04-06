@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../../../store/useStore';
-import { Clock, Calendar, Sparkles, CheckCircle2, X, ChevronDown, ChevronUp, Users } from 'lucide-react';
+import { Clock, Calendar, Sparkles, CheckCircle2, X, ChevronDown, ChevronUp, Users, Lock } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-export const CreateTaskModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+export const CreateTaskModal: React.FC<{ onClose: () => void, forceSelfTask?: boolean }> = ({ onClose, forceSelfTask }) => {
   const addTask = useStore(s => s.addTask);
   const currentUser = useStore(s => s.currentUser);
   const profiles = useStore(s => s.profiles);
@@ -22,6 +22,7 @@ export const CreateTaskModal: React.FC<{ onClose: () => void }> = ({ onClose }) 
   const [showSuccess, setShowSuccess] = useState(false);
   const [isObserversOpen, setIsObserversOpen] = useState(false);
   const [isAssigneeOpen, setIsAssigneeOpen] = useState(false);
+  const [isSelfTask, setIsSelfTask] = useState(forceSelfTask || false);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -51,11 +52,12 @@ export const CreateTaskModal: React.FC<{ onClose: () => void }> = ({ onClose }) 
     const result = await addTask({
       title,
       description,
-      assignee_id: assigneeId || currentUser.id,
+      assignee_id: isSelfTask ? currentUser.id : (assigneeId || currentUser.id),
       creator_id: currentUser.id,
       status: defaultStatus,
       category: category || null,
-      observers: selectedObservers,
+      observers: isSelfTask ? [] : selectedObservers,
+      is_self_task: isSelfTask,
       start_date: startDate || undefined,
       end_date: endDate || undefined
     });
@@ -177,8 +179,52 @@ export const CreateTaskModal: React.FC<{ onClose: () => void }> = ({ onClose }) 
               </div>
             </div>
 
+            {/* Self Task Toggle */}
+            {!forceSelfTask && (
+              <div style={{
+                padding: '1rem',
+                background: isSelfTask ? 'rgba(129, 140, 248, 0.08)' : 'var(--surface-3)',
+                borderRadius: 'var(--radius-lg)',
+                border: isSelfTask ? '1px solid rgba(129, 140, 248, 0.3)' : '1px solid var(--border)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                transition: 'var(--transition)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <div style={{
+                    width: '32px', height: '32px', borderRadius: '50%',
+                    background: isSelfTask ? 'var(--primary)' : 'var(--border-strong)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: 'white', transition: 'var(--transition)'
+                  }}>
+                    <Lock size={16} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-1)' }}>Self Task (Private)</div>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-4)' }}>Only you can see and manage this task.</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsSelfTask(!isSelfTask)}
+                  style={{
+                    width: '44px', height: '24px', borderRadius: 'var(--radius-full)',
+                    background: isSelfTask ? 'var(--primary)' : 'var(--border-strong)',
+                    position: 'relative', border: 'none', cursor: 'pointer', transition: '0.3s'
+                  }}
+                >
+                  <div style={{
+                    width: '18px', height: '18px', background: 'white', borderRadius: '50%',
+                    position: 'absolute', top: '3px', left: isSelfTask ? '23px' : '3px',
+                    transition: '0.3s', boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                  }} />
+                </button>
+              </div>
+            )}
+
             {/* Assignee Selection (Dropdown) */}
-            {currentUser.role === 'Admin' && (
+            {currentUser.role === 'Admin' && !isSelfTask && (
               <div style={{ position: 'relative' }}>
                 <label style={labelStyle}>Assignee</label>
                 <button 
@@ -284,18 +330,26 @@ export const CreateTaskModal: React.FC<{ onClose: () => void }> = ({ onClose }) 
             <div style={{
               background: 'var(--surface)', borderRadius: 'var(--radius-lg)',
               border: '1px solid var(--border)', padding: '1.125rem',
-              borderLeft: `3px solid ${selectedCategoryColor}`
+              borderLeft: `3px solid ${selectedCategoryColor}`,
+              opacity: isSelfTask ? 0.85 : 1
             }}>
-              {category && (
-                <span style={{
-                  fontSize: '0.6rem', fontWeight: 700, color: selectedCategoryColor,
-                  background: `${selectedCategoryColor}12`, padding: '0.15rem 0.45rem',
-                  borderRadius: 'var(--radius-sm)', textTransform: 'uppercase',
-                  display: 'inline-block', marginBottom: '0.4rem', letterSpacing: '0.04em'
-                }}>
-                  {category}
-                </span>
-              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                {category && (
+                  <span style={{
+                    fontSize: '0.6rem', fontWeight: 700, color: selectedCategoryColor,
+                    background: `${selectedCategoryColor}12`, padding: '0.15rem 0.45rem',
+                    borderRadius: 'var(--radius-sm)', textTransform: 'uppercase',
+                    display: 'inline-block', marginBottom: '0.4rem', letterSpacing: '0.04em'
+                  }}>
+                    {category}
+                  </span>
+                )}
+                {isSelfTask && (
+                  <div title="Private Task" style={{ color: 'var(--primary)', opacity: 0.8 }}>
+                    <Lock size={12} />
+                  </div>
+                )}
+              </div>
               <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-1)', marginBottom: '0.3rem' }}>
                 {title || <span style={{ opacity: 0.25, fontStyle: 'italic' }}>Task title...</span>}
               </div>
@@ -335,80 +389,82 @@ export const CreateTaskModal: React.FC<{ onClose: () => void }> = ({ onClose }) 
           </div>
 
           {/* Observers Dropdown */}
-          <div>
-            <div style={sectionLabel}>Observers</div>
-            <div style={{ position: 'relative' }}>
-              <button 
-                type="button"
-                onClick={() => setIsObserversOpen(!isObserversOpen)}
-                style={{
-                  width: '100%', padding: '0.65rem 1rem', borderRadius: 'var(--radius-md)',
-                  background: 'var(--surface)', border: '1.5px solid var(--border-strong)',
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  cursor: 'pointer', transition: 'var(--transition)'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                  <Users size={14} style={{ color: 'var(--primary)', opacity: 0.7 }} />
-                  <span style={{ fontSize: '0.8rem', color: selectedObservers.length > 0 ? 'var(--text-1)' : 'var(--text-4)' }}>
-                    {selectedObservers.length > 0 
-                      ? `${selectedObservers.length} Observer${selectedObservers.length > 1 ? 's' : ''} selected` 
-                      : 'Select observers...'}
-                  </span>
-                </div>
-                {isObserversOpen ? <ChevronUp size={14} color="var(--text-4)" /> : <ChevronDown size={14} color="var(--text-4)" />}
-              </button>
+          {!isSelfTask && (
+            <div>
+              <div style={sectionLabel}>Observers</div>
+              <div style={{ position: 'relative' }}>
+                <button 
+                  type="button"
+                  onClick={() => setIsObserversOpen(!isObserversOpen)}
+                  style={{
+                    width: '100%', padding: '0.65rem 1rem', borderRadius: 'var(--radius-md)',
+                    background: 'var(--surface)', border: '1.5px solid var(--border-strong)',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    cursor: 'pointer', transition: 'var(--transition)'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <Users size={14} style={{ color: 'var(--primary)', opacity: 0.7 }} />
+                    <span style={{ fontSize: '0.8rem', color: selectedObservers.length > 0 ? 'var(--text-1)' : 'var(--text-4)' }}>
+                      {selectedObservers.length > 0 
+                        ? `${selectedObservers.length} Observer${selectedObservers.length > 1 ? 's' : ''} selected` 
+                        : 'Select observers...'}
+                    </span>
+                  </div>
+                  {isObserversOpen ? <ChevronUp size={14} color="var(--text-4)" /> : <ChevronDown size={14} color="var(--text-4)" />}
+                </button>
 
-              {isObserversOpen && (
-                <div style={{
-                  position: 'absolute', top: 'calc(100% + 0.4rem)', left: 0, right: 0,
-                  background: 'var(--surface)', borderRadius: 'var(--radius-lg)',
-                  border: '1px solid var(--border)', boxShadow: 'var(--shadow-lg)',
-                  zIndex: 50, maxHeight: '200px', overflowY: 'auto', padding: '0.35rem'
-                }}>
-                  {profiles.map(p => (
-                    <label 
-                      key={p.id} 
-                      onClick={(e) => e.stopPropagation()}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: '0.75rem',
-                        padding: '0.6rem 0.75rem', borderRadius: 'var(--radius-md)', 
-                        cursor: 'pointer', transition: 'var(--transition-fast)',
-                        background: selectedObservers.includes(p.id) ? 'var(--primary-light)' : 'transparent',
-                        marginBottom: '0.15rem'
-                      }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = selectedObservers.includes(p.id) ? 'var(--primary-light)' : 'var(--surface-2)')}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = selectedObservers.includes(p.id) ? 'var(--primary-light)' : 'transparent')}
-                    >
-                      <input 
-                        type="checkbox" 
-                        checked={selectedObservers.includes(p.id)}
-                        onChange={(e) => {
-                          if (e.target.checked) setSelectedObservers([...selectedObservers, p.id]);
-                          else setSelectedObservers(selectedObservers.filter(id => id !== p.id));
+                {isObserversOpen && (
+                  <div style={{
+                    position: 'absolute', top: 'calc(100% + 0.4rem)', left: 0, right: 0,
+                    background: 'var(--surface)', borderRadius: 'var(--radius-lg)',
+                    border: '1px solid var(--border)', boxShadow: 'var(--shadow-lg)',
+                    zIndex: 50, maxHeight: '200px', overflowY: 'auto', padding: '0.35rem'
+                  }}>
+                    {profiles.map(p => (
+                      <label 
+                        key={p.id} 
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '0.75rem',
+                          padding: '0.6rem 0.75rem', borderRadius: 'var(--radius-md)', 
+                          cursor: 'pointer', transition: 'var(--transition-fast)',
+                          background: selectedObservers.includes(p.id) ? 'var(--primary-light)' : 'transparent',
+                          marginBottom: '0.15rem'
                         }}
-                        style={{ accentColor: 'var(--primary)' }}
-                      />
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                        <div className="avatar" style={{ width: '22px', height: '22px', fontSize: '0.6rem', borderWidth: '1px' }}>
-                          {p.full_name.charAt(0).toUpperCase()}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = selectedObservers.includes(p.id) ? 'var(--primary-light)' : 'var(--surface-2)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = selectedObservers.includes(p.id) ? 'var(--primary-light)' : 'transparent')}
+                      >
+                        <input 
+                          type="checkbox" 
+                          checked={selectedObservers.includes(p.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) setSelectedObservers([...selectedObservers, p.id]);
+                            else setSelectedObservers(selectedObservers.filter(id => id !== p.id));
+                          }}
+                          style={{ accentColor: 'var(--primary)' }}
+                        />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                          <div className="avatar" style={{ width: '22px', height: '22px', fontSize: '0.6rem', borderWidth: '1px' }}>
+                            {p.full_name.charAt(0).toUpperCase()}
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-1)' }}>{p.full_name}</span>
+                            <span style={{ fontSize: '0.65rem', color: 'var(--text-4)' }}>{p.role}</span>
+                          </div>
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                          <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-1)' }}>{p.full_name}</span>
-                          <span style={{ fontSize: '0.65rem', color: 'var(--text-4)' }}>{p.role}</span>
-                        </div>
+                      </label>
+                    ))}
+                    {profiles.length === 0 && (
+                      <div style={{ padding: '1rem', textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-4)' }}>
+                        No other team members found.
                       </div>
-                    </label>
-                  ))}
-                  {profiles.length === 0 && (
-                    <div style={{ padding: '1rem', textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-4)' }}>
-                      No other team members found.
-                    </div>
-                  )}
-                </div>
-              )}
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>

@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../../../store/useStore';
 import { TaskCard } from './TaskCard';
-import { Search, Filter, ArrowUpDown, Clock, User as UserIcon, Tag, LayoutGrid, ListChecks } from 'lucide-react';
+import { Search, Filter, ArrowUpDown, Clock, User as UserIcon, Tag, LayoutGrid, ListChecks, Lock } from 'lucide-react';
 
 export const TaskBoard: React.FC<{ onSelectTask: (id: string | null) => void }> = ({ onSelectTask }) => {
   const viewMode = useStore(s => s.viewMode);
@@ -16,6 +16,11 @@ export const TaskBoard: React.FC<{ onSelectTask: (id: string | null) => void }> 
   const visibleTasks = useMemo(() => {
     if (!currentUser) return [];
     return tasks.filter(task => {
+      // If it's a self-task, ONLY the creator can see it, regardless of role.
+      if (task.is_self_task) {
+        return task.creator_id === currentUser.id;
+      }
+      
       if (currentUser.role === 'Admin') return true;
       return (task.assignee_id === currentUser.id) || 
              (task.creator_id === currentUser.id) ||
@@ -28,6 +33,7 @@ export const TaskBoard: React.FC<{ onSelectTask: (id: string | null) => void }> 
   const [filterStatus, setFilterStatus] = useState<string>('All');
   const [filterCategory, setFilterCategory] = useState<string>('All');
   const [filterAssignee, setFilterAssignee] = useState<string>('All');
+  const [filterSelfTasks, setFilterSelfTasks] = useState<'all' | 'only' | 'hide'>('all');
   const [sortBy, setSortBy] = useState<'name' | 'date' | 'status'>('date');
 
   const filteredTasks = useMemo(() => {
@@ -37,7 +43,12 @@ export const TaskBoard: React.FC<{ onSelectTask: (id: string | null) => void }> 
       const matchesStatus = filterStatus === 'All' || t.status === filterStatus;
       const matchesCategory = filterCategory === 'All' || t.category === filterCategory;
       const matchesAssignee = filterAssignee === 'All' || t.assignee_id === filterAssignee;
-      return matchesSearch && matchesStatus && matchesCategory && matchesAssignee;
+      const matchesSelf = 
+        filterSelfTasks === 'all' ? true :
+        filterSelfTasks === 'only' ? t.is_self_task === true :
+        t.is_self_task !== true;
+
+      return matchesSearch && matchesStatus && matchesCategory && matchesAssignee && matchesSelf;
     });
 
     if (sortBy === 'name') result.sort((a, b) => a.title.localeCompare(b.title));
@@ -128,6 +139,15 @@ export const TaskBoard: React.FC<{ onSelectTask: (id: string | null) => void }> 
           </div>
         )}
 
+        <div className="filter-select-group">
+          <Lock size={13} style={{ opacity: 0.4 }} />
+          <select value={filterSelfTasks} onChange={e => setFilterSelfTasks(e.target.value as any)} className="clean-select">
+            <option value="all">All Tasks</option>
+            <option value="only">Self Tasks Only</option>
+            <option value="hide">Team Tasks Only</option>
+          </select>
+        </div>
+
         <div className="filter-select-group" style={{ background: 'var(--surface-3)', borderColor: 'transparent' }}>
           <ArrowUpDown size={13} style={{ color: 'var(--primary)' }} />
           <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} className="clean-select">
@@ -137,9 +157,9 @@ export const TaskBoard: React.FC<{ onSelectTask: (id: string | null) => void }> 
           </select>
         </div>
 
-        {activeFilterCount > 0 && (
+        {(activeFilterCount > 0 || filterSelfTasks !== 'all' || searchQuery !== '') && (
           <button 
-            onClick={() => { setFilterStatus('All'); setFilterCategory('All'); setFilterAssignee('All'); setSearchQuery(''); }}
+            onClick={() => { setFilterStatus('All'); setFilterCategory('All'); setFilterAssignee('All'); setFilterSelfTasks('all'); setSearchQuery(''); }}
             style={{ 
               padding: '0.4rem 0.75rem', 
               borderRadius: 'var(--radius-full)', 
@@ -151,7 +171,7 @@ export const TaskBoard: React.FC<{ onSelectTask: (id: string | null) => void }> 
               cursor: 'pointer'
             }}
           >
-            Clear {activeFilterCount}
+            Clear Filters
           </button>
         )}
       </div>
@@ -204,7 +224,10 @@ export const TaskBoard: React.FC<{ onSelectTask: (id: string | null) => void }> 
                     onClick={() => onSelectTask(task.id)}
                   >
                     <td>
-                      <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-1)' }}>{task.title}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        {task.is_self_task && <Lock size={12} style={{ color: 'var(--primary)', opacity: 0.8 }} />}
+                        <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-1)' }}>{task.title}</div>
+                      </div>
                     </td>
                     <td>
                       {task.category ? (
