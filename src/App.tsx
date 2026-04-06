@@ -8,6 +8,7 @@ import { MyTasksView } from './features/tasks/components/MyTasksView';
 import { ProfileSettings } from './features/profile/components/ProfileSettings';
 import { Auth } from './features/auth/components/Auth';
 import { AdminSettings } from './features/admin/components/AdminSettings';
+import { CompleteProfileModal } from './features/auth/components/CompleteProfileModal';
 import { useStore } from './store/useStore';
 import { Menu } from 'lucide-react';
 import './index.css';
@@ -20,6 +21,7 @@ function App() {
   const initialize = useStore(s => s.initialize);
   const viewMode = useStore(s => s.viewMode);
   const isCheckingSession = useStore(s => s.isCheckingSession);
+  const isInvitedSession = useStore(s => s.isInvitedSession);
 
   useEffect(() => {
     initialize();
@@ -132,6 +134,10 @@ function App() {
           taskId={selectedTaskId} 
           onClose={() => setSelectedTaskId(null)} 
         />
+      )}
+
+      {isInvitedSession && (
+        <CompleteProfileModal />
       )}
 
       <ToastNotification />

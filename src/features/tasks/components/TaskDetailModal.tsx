@@ -28,6 +28,10 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
   const canEdit = task.is_self_task 
     ? (currentUser.id === task.creator_id)
     : (!isObserver && (currentUser.role === 'Admin' || currentUser.id === task.assignee_id || currentUser.id === task.creator_id));
+  const canDelete = task.is_self_task 
+    ? (currentUser.id === task.creator_id)
+    : (currentUser.role === 'Admin' || currentUser.id === task.creator_id);
+
   const catColor = categories.find(c => c.name === task.category)?.color || '#64748b';
   const statColor = statuses.find(s => s.name === task.status)?.color || '#64748b';
 
@@ -145,7 +149,7 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
               </ReactMarkdown>
             </div>
 
-            {currentUser.role === 'Admin' && (
+            {canDelete && (
               <button 
                 onClick={handleDelete}
                 style={{ 

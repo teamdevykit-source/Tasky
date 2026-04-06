@@ -7,6 +7,7 @@ type Theme = 'light' | 'dark';
 interface StoreState {
   currentUser: Profile | null;
   isCheckingSession: boolean;
+  isInvitedSession: boolean;
   isLoaded: boolean;
   profiles: Profile[];
   tasks: Task[];
@@ -19,6 +20,7 @@ interface StoreState {
   viewMode: 'dashboard' | 'kanban' | 'scrum' | 'settings' | 'my-tasks' | 'profile';
   setViewMode: (mode: 'dashboard' | 'kanban' | 'scrum' | 'settings' | 'my-tasks' | 'profile') => void;
   updatePassword: (password: string) => Promise<void>;
+  updateProfile: (updates: { full_name?: string, job_title?: string }) => Promise<void>;
   setTheme: (theme: Theme) => void;
   toggleTheme: () => void;
   getVisibleTasks: () => Task[];
@@ -71,6 +73,7 @@ let _initialized = false;
 export const useStore = create<StoreState>((set, get) => ({
   currentUser: null,
   isCheckingSession: true,
+  isInvitedSession: false,
   isLoaded: false,
   profiles: [],
   tasks: [],
@@ -88,6 +91,28 @@ export const useStore = create<StoreState>((set, get) => ({
       throw error;
     }
     set({ alertData: { message: 'Password updated successfully!', type: 'success' } });
+  },
+  updateProfile: async (updates) => {
+    const { currentUser } = get();
+    if (!currentUser) return;
+    
+    // 1. Update Auth metadata
+    if (updates.full_name) {
+      await supabase.auth.updateUser({ data: { full_name: updates.full_name } });
+    }
+    
+    // 2. Update Public profiles table
+    const { error } = await supabase.from('profiles').update(updates).eq('id', currentUser.id);
+    if (error) {
+      set({ alertData: { message: error.message, type: 'error' } });
+      throw error;
+    }
+    
+    // 3. Update local state
+    set({ 
+      currentUser: { ...currentUser, ...updates },
+      profiles: get().profiles.map(p => p.id === currentUser.id ? { ...p, ...updates } : p)
+    });
   },
   setViewMode: (mode) => {
     try { localStorage.setItem('elmeraki-view', mode); } catch { }
@@ -114,18 +139,14 @@ export const useStore = create<StoreState>((set, get) => ({
 
     const { data: { session } } = await supabase.auth.getSession();
 
-    // Check if we should force sign up mode (usually after clicking an invitation magic link)
+    // Handle invitation deep-link: We want them to stay logged in but we'll show a "finish" UI
     const params = new URLSearchParams(window.location.search);
-    if (params.get('type') === 'signup' && session) {
-      console.log("🔄 Invitation detected: Clearing magic session to force password set via Sign-Up.");
-      await supabase.auth.signOut();
-      set({ isCheckingSession: false });
-      return;
-    }
+    const isInvited = (params.get('type') === 'signup' && !!session);
+    if (isInvited) set({ isInvitedSession: true });
 
     if (!session) {
       set({ isCheckingSession: false });
-      return; // Added return to prevent further execution without session
+      return;
     }
 
     const loadData = async (userId: string) => {
