@@ -13,6 +13,16 @@ export const CompleteProfileModal: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Clear the invitation params from URL immediately on mount so re-renders don't re-trigger it
+  React.useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('type') || url.searchParams.has('email')) {
+      url.searchParams.delete('type');
+      url.searchParams.delete('email');
+      window.history.replaceState({}, '', url);
+    }
+  }, []);
+
   if (!currentUser) return null;
 
   const handleComplete = async (e: React.FormEvent) => {
@@ -36,11 +46,7 @@ export const CompleteProfileModal: React.FC = () => {
       // 2. Set Password
       await updatePassword(password);
       
-      // 3. Close the modal by clearing the URL and flag
-      const url = new URL(window.location.href);
-      url.searchParams.delete('type');
-      url.searchParams.delete('email');
-      window.history.replaceState({}, '', url);
+      // 3. Clear flag to close modal
       useStore.setState({ isInvitedSession: false });
       
     } catch (err: any) {
