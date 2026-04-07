@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { useStore } from '../../../store/useStore';
-import { BarChart, Activity, Clock, Users, Zap, LayoutDashboard, Target, ShieldCheck, ChevronDown, ChevronUp, Lock } from 'lucide-react';
+import { BarChart, Activity, Clock, Users, Zap, LayoutDashboard, Target, ShieldCheck, ChevronDown, ChevronUp } from 'lucide-react';
 
 export const DashboardAnalytics: React.FC = () => {
   const [expandedRole, setExpandedRole] = React.useState<'Admin' | 'Worker' | null>(null);
@@ -10,20 +10,8 @@ export const DashboardAnalytics: React.FC = () => {
   const statuses = useStore(s => s.statuses);
   const categories = useStore(s => s.categories);
 
-  const visibleTasks = useMemo(() => {
-    if (!currentUser) return [];
-    return tasks.filter(t => {
-      // If it's a self-task, ONLY the creator can see it, regardless of role.
-      if (t.is_self_task) {
-        return t.creator_id === currentUser.id;
-      }
-      
-      if (currentUser.role === 'Admin') return true;
-      return (t.assignee_id === currentUser.id) || 
-             (t.creator_id === currentUser.id) || 
-             (t.observers && t.observers.includes(currentUser.id));
-    });
-  }, [tasks, currentUser]);
+  const getDashboardTasks = useStore(s => s.getDashboardTasks);
+  const visibleTasks = useMemo(() => getDashboardTasks(), [getDashboardTasks, tasks]);
 
   const stats = useMemo(() => {
     const total = visibleTasks.length;
@@ -32,11 +20,11 @@ export const DashboardAnalytics: React.FC = () => {
     // If no explicit "Done" status, we just count them by grouping.
     const byStatus = statuses.map(s => ({
       ...s,
-      count: visibleTasks.filter(t => t.status === s.name).length
+      count: visibleTasks.filter((t: any) => t.status === s.name).length
     }));
     
     // Catch orphaned tasks
-    const unmappedTasks = visibleTasks.filter(t => !statuses.find(s => s.name === t.status)).length;
+    const unmappedTasks = visibleTasks.filter((t: any) => !statuses.find(s => s.name === t.status)).length;
     if (unmappedTasks > 0) {
       byStatus.push({
         id: 'unmapped-status',
@@ -49,10 +37,10 @@ export const DashboardAnalytics: React.FC = () => {
     
     const byCategory = categories.map(c => ({
       ...c,
-      count: visibleTasks.filter(t => t.category === c.name).length
+      count: visibleTasks.filter((t: any) => t.category === c.name).length
     }));
     
-    const unmappedCat = visibleTasks.filter(t => t.category && !categories.find(c => c.name === t.category)).length;
+    const unmappedCat = visibleTasks.filter((t: any) => t.category && !categories.find(c => c.name === t.category)).length;
     if (unmappedCat > 0) {
       byCategory.push({
         id: 'unmapped-cat',
@@ -63,16 +51,16 @@ export const DashboardAnalytics: React.FC = () => {
       });
     }
     
-    const unassigned = visibleTasks.filter(t => !t.assignee_id).length;
+    const unassigned = visibleTasks.filter((t: any) => !t.assignee_id).length;
     
-    const myTasks = visibleTasks.filter(t => t.assignee_id === currentUser?.id).length;
+    const myTasks = visibleTasks.filter((t: any) => t.assignee_id === currentUser?.id).length;
 
     const byRole = {
       Admin: profiles.filter(p => p.role === 'Admin').length,
       Worker: profiles.filter(p => p.role === 'Worker').length
     };
 
-    const selfTasks = visibleTasks.filter(t => t.is_self_task).length;
+    const selfTasks = visibleTasks.filter((t: any) => t.is_self_task).length;
 
     return { total, byStatus, byCategory, unassigned, myTasks, totalUsers: profiles.length, byRole, selfTasks };
   }, [visibleTasks, statuses, categories, currentUser]);
@@ -144,12 +132,6 @@ export const DashboardAnalytics: React.FC = () => {
           title="Unassigned" 
           value={stats.unassigned} 
           bg="rgba(248,113,113,0.1)"
-        />
-        <MetricCard 
-          icon={<Lock size={20} color="#f472b6" />} 
-          title="Self Tasks" 
-          value={stats.selfTasks} 
-          bg="rgba(244,114,182,0.1)"
         />
         {currentUser.role === 'Admin' && (
           <MetricCard 

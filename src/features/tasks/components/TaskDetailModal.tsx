@@ -3,6 +3,7 @@ import { useStore } from '../../../store/useStore';
 import { X, Clock, Trash2, CheckCircle2, AlignLeft, Eye, Lock } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { formatDateTime } from '../../../lib/format';
 
 export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> = ({ taskId, onClose }) => {
   const [isConfirmingDelete, setIsConfirmingDelete] = React.useState(false);
@@ -200,14 +201,14 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontSize: '0.85rem' }}>
                   <Clock size={14} style={{ color: 'var(--primary)', opacity: 0.6 }} />
                   <div>
-                    <div style={{ fontWeight: 500, color: 'var(--text-1)' }}>{task.start_date || 'TBD'}</div>
+                    <div style={{ fontWeight: 500, color: 'var(--text-1)' }}>{formatDateTime(task.start_date)}</div>
                     <div style={{ fontSize: '0.65rem', color: 'var(--text-4)' }}>Start</div>
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontSize: '0.85rem' }}>
                   <CheckCircle2 size={14} style={{ color: statColor, opacity: 0.6 }} />
                   <div>
-                    <div style={{ fontWeight: 500, color: 'var(--text-1)' }}>{task.end_date || 'TBD'}</div>
+                    <div style={{ fontWeight: 500, color: 'var(--text-1)' }}>{formatDateTime(task.end_date)}</div>
                     <div style={{ fontSize: '0.65rem', color: 'var(--text-4)' }}>Deadline</div>
                   </div>
                 </div>

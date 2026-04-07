@@ -15,10 +15,11 @@ interface StoreState {
   statuses: Status[];
   theme: Theme;
   alertData: { message: string, type: 'error' | 'success' } | null;
+  reminders: { id: string, taskId: string, message: string, type: 'warning' | 'urgent' }[];
 
   setAlertData: (data: { message: string, type: 'error' | 'success' } | null) => void;
-  viewMode: 'dashboard' | 'kanban' | 'scrum' | 'settings' | 'my-tasks' | 'profile';
-  setViewMode: (mode: 'dashboard' | 'kanban' | 'scrum' | 'settings' | 'my-tasks' | 'profile') => void;
+  viewMode: 'dashboard' | 'kanban' | 'scrum' | 'settings' | 'my-tasks' | 'profile' | 'reminders';
+  setViewMode: (mode: 'dashboard' | 'kanban' | 'scrum' | 'settings' | 'my-tasks' | 'profile' | 'reminders') => void;
   updatePassword: (password: string) => Promise<void>;
   updateProfile: (updates: { full_name?: string, job_title?: string }) => Promise<void>;
   setTheme: (theme: Theme) => void;
@@ -37,8 +38,10 @@ interface StoreState {
   addStatus: (name: string, color: string) => Promise<void>;
   deleteStatus: (id: string) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
-  deleteUser: (userId: string) => Promise<void>;
+  dismissReminder: (reminderId: string) => void;
+  checkTaskDeadlines: () => void;
   logout: () => Promise<void>;
+  getDashboardTasks: () => Task[];
 }
 
 const getInitialTheme = (): Theme => {
@@ -60,7 +63,7 @@ applyTheme(getInitialTheme());
 const getInitialViewMode = (): StoreState['viewMode'] => {
   try {
     const saved = localStorage.getItem('elmeraki-view');
-    if (saved && ['dashboard', 'kanban', 'scrum', 'settings', 'my-tasks', 'profile'].includes(saved)) {
+    if (saved && ['dashboard', 'kanban', 'scrum', 'settings', 'my-tasks', 'profile', 'reminders'].includes(saved)) {
       return saved as StoreState['viewMode'];
     }
   } catch { }
@@ -81,8 +84,70 @@ export const useStore = create<StoreState>((set, get) => ({
   statuses: [],
   theme: getInitialTheme(),
   alertData: null,
+  reminders: [],
 
   setAlertData: (data) => set({ alertData: data }),
+  
+  dismissReminder: (id) => set(s => ({ 
+    reminders: s.reminders.filter(r => r.id !== id) 
+  })),
+
+  checkTaskDeadlines: () => {
+    const { tasks, currentUser, reminders } = get();
+    if (!currentUser) return;
+
+    const newReminders: StoreState['reminders'] = [];
+    const now = new Date();
+    
+    // Admins get reminders for EVERYTHING (except private tasks).
+    // Workers only get reminders for tasks they are assigned to, created, or observe.
+    const tasksToCheck = tasks.filter(t => {
+      if (t.status === 'Done' || t.is_self_task) return false;
+      
+      if (currentUser.role === 'Admin') return true;
+      
+      return (t.assignee_id === currentUser.id) ||
+             (t.creator_id === currentUser.id) ||
+             (t.observers && t.observers.includes(currentUser.id));
+    });
+
+    tasksToCheck.forEach(task => {
+      if (!task.end_date) return;
+      
+      const deadline = new Date(task.end_date);
+      const diffMs = deadline.getTime() - now.getTime();
+      const diffHrs = diffMs / (1000 * 60 * 60);
+
+      // 1. One Hour Reminder (Urgent)
+      if (diffHrs > 0 && diffHrs <= 1) {
+        const rId = `${task.id}-one-hour`;
+        if (!reminders.find(r => r.id === rId)) {
+          newReminders.push({
+            id: rId,
+            taskId: task.id,
+            message: `URGENT: "${task.title}" is due very soon (less than 1 hour)!`,
+            type: 'urgent'
+          });
+        }
+      }
+      // 2. One Day Reminder (Warning)
+      else if (diffHrs > 1 && diffHrs <= 24) {
+        const rId = `${task.id}-one-day`;
+        if (!reminders.find(r => r.id === rId)) {
+          newReminders.push({
+            id: rId,
+            taskId: task.id,
+            message: `REMINDER: "${task.title}" is due in less than 24 hours.`,
+            type: 'warning'
+          });
+        }
+      }
+    });
+
+    if (newReminders.length > 0) {
+      set(s => ({ reminders: [...s.reminders, ...newReminders] }));
+    }
+  },
   viewMode: getInitialViewMode(),
   updatePassword: async (password) => {
     const { error } = await supabase.auth.updateUser({ password });
@@ -149,11 +214,12 @@ export const useStore = create<StoreState>((set, get) => ({
       return;
     }
 
-    const loadData = async (userId: string) => {
-      // Avoid double-loading if already in progress
-      if (get().isLoaded) return;
+    const loadData = async (userId: string, isSilent = false) => {
+      // 1. Avoid redundant loads if already loaded, UNLESS it's a silent refresh request
+      if (get().isLoaded && !isSilent) return;
       
-      set({ isCheckingSession: true });
+      // 2. Only show the full-screen loader if it's the very first load
+      if (!isSilent) set({ isCheckingSession: true });
       try {
         console.log("🚀 Starting workspace load for:", userId);
         
@@ -205,16 +271,24 @@ export const useStore = create<StoreState>((set, get) => ({
         if (statuses) set({ statuses });
 
         set({ isLoaded: true });
+        if (isSilent) {
+          // If silent, just update parts of state if needed, but usually initialize has set them already
+        }
       } catch (error) {
         console.error("❌ Loading Error:", error);
-        get().setAlertData({ 
-          message: "Could not connect to database. Please check your internet or retry.", 
-          type: 'error' 
-        });
+        // Only alert on failure if it's NOT a silent background update
+        if (!isSilent) {
+          get().setAlertData({ 
+            message: "Could not connect to database. Please check your internet or retry.", 
+            type: 'error' 
+          });
+        }
       } finally {
-        set({ isCheckingSession: false });
-        // Emergency release if somehow catch failed
-        setTimeout(() => set({ isCheckingSession: false }), 100);
+        if (!isSilent) {
+          set({ isCheckingSession: false });
+          // Emergency release if somehow catch failed
+          setTimeout(() => set({ isCheckingSession: false }), 100);
+        }
       }
     };
 
@@ -222,7 +296,7 @@ export const useStore = create<StoreState>((set, get) => ({
       refreshData: async () => {
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
-          await loadData(session.user.id);
+          await loadData(session.user.id, true); // true = silent refresh
         }
       }
     });
@@ -493,6 +567,23 @@ export const useStore = create<StoreState>((set, get) => ({
       return (task.assignee_id === currentUser.id) ||
         (task.creator_id === currentUser.id) ||
         (task.observers && task.observers.includes(currentUser.id));
+    });
+  },
+  getDashboardTasks: () => {
+    const { tasks, currentUser } = get();
+    if (!currentUser) return [];
+
+    return tasks.filter(task => {
+      // 1. Never count private self-tasks in the 'overall' dashboard/totals
+      if (task.is_self_task) return false;
+
+      // 2. Admins see all public tasks
+      if (currentUser.role === 'Admin') return true;
+
+      // 3. Workers see public tasks they are involved in (assigned, created, or observing)
+      return (task.assignee_id === currentUser.id) ||
+             (task.creator_id === currentUser.id) ||
+             (task.observers && task.observers.includes(currentUser.id));
     });
   }
 }));

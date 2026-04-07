@@ -1,6 +1,7 @@
 import React from 'react';
 import { useStore } from '../../store/useStore';
 import { Plus, KanbanSquare, List, Settings } from 'lucide-react';
+import { ReminderBell } from '../Notifications/ReminderBell';
 
 export const Header: React.FC<{ onOpenCreateModal: () => void }> = ({ onOpenCreateModal }) => {
   const { currentUser, viewMode, setViewMode, logout } = useStore();
@@ -40,9 +41,12 @@ export const Header: React.FC<{ onOpenCreateModal: () => void }> = ({ onOpenCrea
           )}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginLeft: '1rem' }}>
-          <span style={{ fontSize: '0.875rem', fontWeight: 500 }}>{currentUser.full_name} ({currentUser.role})</span>
-          <button className="secondary-btn" onClick={() => logout()}>Logout</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', marginLeft: '1.25rem' }}>
+          <ReminderBell />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
+            <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-1)' }}>{currentUser.full_name}</span>
+            <button className="secondary-btn" onClick={() => logout()} style={{ padding: '0.4rem 0.75rem', fontSize: '0.75rem' }}>Logout</button>
+          </div>
         </div>
 
         <button className="primary-btn" onClick={onOpenCreateModal}>

@@ -375,14 +375,14 @@ export const CreateTaskModal: React.FC<{ onClose: () => void, forceSelfTask?: bo
                 <label style={{ ...labelStyle, fontSize: '0.68rem' }}>Start Date</label>
                 <div style={{ position: 'relative' }}>
                   <Clock size={13} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-4)', pointerEvents: 'none' }} />
-                  <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={{ ...inputStyle, paddingLeft: '2.25rem', fontSize: '0.82rem' }} />
+                  <input type="datetime-local" value={startDate} onChange={e => setStartDate(e.target.value)} style={{ ...inputStyle, paddingLeft: '2.25rem', fontSize: '0.82rem' }} />
                 </div>
               </div>
               <div>
                 <label style={{ ...labelStyle, fontSize: '0.68rem' }}>End Date</label>
                 <div style={{ position: 'relative' }}>
                   <Calendar size={13} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-4)', pointerEvents: 'none' }} />
-                  <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={{ ...inputStyle, paddingLeft: '2.25rem', fontSize: '0.82rem' }} />
+                  <input type="datetime-local" value={endDate} onChange={e => setEndDate(e.target.value)} style={{ ...inputStyle, paddingLeft: '2.25rem', fontSize: '0.82rem' }} />
                 </div>
               </div>
             </div>

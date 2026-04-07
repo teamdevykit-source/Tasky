@@ -1,6 +1,6 @@
 import React from 'react';
 import { useStore } from '../../store/useStore';
-import { Plus, KanbanSquare, List, Settings, LogOut, Zap, Sun, Moon, X, LayoutDashboard, Lock } from 'lucide-react';
+import { Plus, KanbanSquare, List, Settings, LogOut, Zap, Sun, Moon, X, LayoutDashboard, Lock, Bell } from 'lucide-react';
 
 interface SidebarProps {
   onOpenCreateModal: () => void;
@@ -13,13 +13,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ onOpenCreateModal, isOpen, onC
   const viewMode = useStore(s => s.viewMode);
   const setViewMode = useStore(s => s.setViewMode);
   const logout = useStore(s => s.logout);
-  const tasks = useStore(s => s.tasks);
   const theme = useStore(s => s.theme);
   const toggleTheme = useStore(s => s.toggleTheme);
   
   if (!currentUser) return null;
-
-  const taskCount = tasks.length;
+  const getDashboardTasks = useStore(s => s.getDashboardTasks);
+  const taskCount = getDashboardTasks().length;
+  const reminders = useStore(s => s.reminders);
   const isDark = theme === 'dark';
 
   return (
@@ -106,6 +106,28 @@ export const Sidebar: React.FC<SidebarProps> = ({ onOpenCreateModal, isOpen, onC
             <Lock size={17} />
             <span>My Tasks</span>
             <div style={{ marginLeft: 'auto', background: 'var(--primary-light)', padding: '0.1rem 0.4rem', borderRadius: 'var(--radius-full)', fontSize: '0.65rem', fontWeight: 700, color: 'var(--primary)' }}>Private</div>
+          </button>
+
+          <button 
+            className={`nav-item ${viewMode === 'reminders' ? 'active' : ''}`}
+            onClick={() => setViewMode('reminders')}
+            style={{ position: 'relative' }}
+          >
+            <Bell size={17} />
+            <span>Reminders</span>
+            {reminders.length > 0 && (
+              <div style={{ 
+                marginLeft: 'auto', 
+                background: reminders.some(r => r.type === 'urgent') ? 'var(--danger)' : 'var(--primary)', 
+                padding: '0.1rem 0.4rem', 
+                borderRadius: 'var(--radius-full)', 
+                fontSize: '0.65rem', 
+                fontWeight: 700, 
+                color: 'white' 
+              }}>
+                {reminders.length}
+              </div>
+            )}
           </button>
 
           <button 

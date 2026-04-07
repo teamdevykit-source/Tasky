@@ -1,7 +1,8 @@
 import React from 'react';
 import type { Task } from '../../../lib/supabase';
 import { useStore } from '../../../store/useStore';
-import { Calendar, Eye, GripVertical, Lock } from 'lucide-react';
+import { Calendar, Eye, GripVertical, Lock, AlertTriangle, AlertCircle } from 'lucide-react';
+import { formatDateTime } from '../../../lib/format';
 
 export const TaskCard: React.FC<{ task: Task, onClick: () => void }> = ({ task, onClick }) => {
   const currentUser = useStore(s => s.currentUser);
@@ -28,6 +29,23 @@ export const TaskCard: React.FC<{ task: Task, onClick: () => void }> = ({ task, 
   const statusNames = statuses.map(s => s.name);
   const categoryColor = categories.find(c => c.name === task.category)?.color || '#64748b';
 
+  const isOverdue = React.useMemo(() => {
+    if (!task.end_date || task.status === 'Done') return false;
+    return new Date(task.end_date).getTime() < Date.now();
+  }, [task.end_date, task.status]);
+
+  const isUrgent = React.useMemo(() => {
+    if (!task.end_date || task.status === 'Done' || isOverdue) return false;
+    const diff = new Date(task.end_date).getTime() - Date.now();
+    return diff < (1000 * 60 * 60); // 1 hour
+  }, [task.end_date, task.status, isOverdue]);
+
+  const isWarning = React.useMemo(() => {
+    if (!task.end_date || task.status === 'Done' || isUrgent || isOverdue) return false;
+    const diff = new Date(task.end_date).getTime() - Date.now();
+    return diff < (1000 * 60 * 60 * 24); // 24 hours
+  }, [task.end_date, task.status, isUrgent, isOverdue]);
+
   const handleDragStart = (e: React.DragEvent) => {
     if (isLocked) {
       e.preventDefault();
@@ -39,8 +57,13 @@ export const TaskCard: React.FC<{ task: Task, onClick: () => void }> = ({ task, 
 
   return (
     <div 
-      className="task-card" 
-      style={{ borderLeft: `3px solid ${statusColor}`, cursor: isLocked ? 'pointer' : 'grab' }}
+      className={`task-card ${isOverdue || isUrgent ? 'urgent-pulse' : ''}`} 
+      style={{ 
+        borderLeft: `3px solid ${statusColor}`, 
+        border: isOverdue ? '1.5px solid var(--danger)' : isUrgent ? '1.5px solid #f87171' : undefined,
+        cursor: isLocked ? 'pointer' : 'grab',
+        boxShadow: isUrgent || isOverdue ? '0 0 12px rgba(239, 68, 68, 0.15)' : 'var(--shadow-sm)'
+      }}
       draggable={!isLocked}
       onDragStart={handleDragStart}
       onClick={onClick}
@@ -59,6 +82,8 @@ export const TaskCard: React.FC<{ task: Task, onClick: () => void }> = ({ task, 
           </span>
         ) : <span />}
         <div style={{ display: 'flex', gap: '0.375rem', alignItems: 'center' }}>
+          {isOverdue && <div title="OVERDUE" style={{ color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '0.2rem', fontSize: '0.6rem', fontWeight: 800 }}><AlertTriangle size={12}/></div>}
+          {isUrgent && <div title="ENDS SOON ( < 1h )" style={{ color: '#f87171', display: 'flex', alignItems: 'center', gap: '0.2rem', fontSize: '0.6rem', fontWeight: 800 }}><AlertCircle size={12}/></div>}
           {task.is_self_task && <Lock size={11} style={{ color: 'var(--primary)', opacity: 0.8 }} />}
           {isObserver && <Eye size={11} style={{ color: 'var(--success)', opacity: 0.7 }} />}
           {!isLocked && <GripVertical size={11} style={{ color: 'var(--text-4)', opacity: 0.4 }} />}
@@ -72,13 +97,18 @@ export const TaskCard: React.FC<{ task: Task, onClick: () => void }> = ({ task, 
 
       {/* Bottom Area */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.75rem' }}>
-        {/* Date Row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.68rem', color: 'var(--text-4)' }}>
+        <div style={{ 
+          display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.68rem', 
+          color: isOverdue ? 'var(--danger)' : isUrgent ? '#f87171' : isWarning ? '#f59e0b' : 'var(--text-4)',
+          fontWeight: isUrgent || isOverdue ? 600 : 400
+        }}>
           <Calendar size={11} style={{ opacity: 0.6 }} />
           <span>
             {!task.start_date && !task.end_date 
               ? 'No date' 
-              : `${task.end_date || task.start_date || '—'}`}
+              : task.start_date && task.end_date 
+                ? `${formatDateTime(task.start_date)} — ${formatDateTime(task.end_date)}`
+                : formatDateTime(task.start_date || task.end_date)}
           </span>
         </div>
 

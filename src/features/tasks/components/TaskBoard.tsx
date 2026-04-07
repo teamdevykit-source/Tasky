@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../../../store/useStore';
 import { TaskCard } from './TaskCard';
-import { Search, Filter, ArrowUpDown, Clock, User as UserIcon, Tag, LayoutGrid, ListChecks, Lock } from 'lucide-react';
+import { Search, Filter, ArrowUpDown, Clock, User as UserIcon, Tag, LayoutGrid, ListChecks, Lock, AlertTriangle, AlertCircle } from 'lucide-react';
+import { formatDateTime } from '../../../lib/format';
 
 export const TaskBoard: React.FC<{ onSelectTask: (id: string | null) => void }> = ({ onSelectTask }) => {
   const viewMode = useStore(s => s.viewMode);
@@ -245,13 +246,26 @@ export const TaskBoard: React.FC<{ onSelectTask: (id: string | null) => void }> 
                       ) : <span style={{ opacity: 0.25, fontSize: '0.8rem' }}>—</span>}
                     </td>
                     <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-3)' }}>
-                        <Clock size={13} style={{ color: 'var(--primary)', opacity: 0.5 }} />
-                        <span>
+                      <div style={{ 
+                        display: 'flex', alignItems: 'center', gap: '0.4rem', 
+                        fontSize: '0.8rem', 
+                        color: (new Date(task.end_date || '').getTime() < Date.now() && task.status !== 'Done') ? 'var(--danger)' : 
+                               (new Date(task.end_date || '').getTime() - Date.now() < 3600000 && task.status !== 'Done') ? '#f87171' : 'var(--text-3)',
+                        fontWeight: (new Date(task.end_date || '').getTime() - Date.now() < 3600000 && task.status !== 'Done') ? 600 : 400
+                      }}>
+                        <Clock size={13} style={{ 
+                          color: (new Date(task.end_date || '').getTime() < Date.now() && task.status !== 'Done') ? 'var(--danger)' : 'var(--primary)', 
+                          opacity: 0.6 
+                        }} />
+                        <span style={{ whiteSpace: 'nowrap' }}>
                           {!task.start_date && !task.end_date 
                             ? 'No date' 
-                            : `${task.start_date || 'No date'} — ${task.end_date || 'No date'}`}
+                            : task.start_date && task.end_date 
+                              ? `${formatDateTime(task.start_date)} — ${formatDateTime(task.end_date)}`
+                              : formatDateTime(task.start_date || task.end_date)}
                         </span>
+                        {new Date(task.end_date || '').getTime() < Date.now() && task.status !== 'Done' && <AlertTriangle size={12} color="var(--danger)" />}
+                        {(new Date(task.end_date || '').getTime() - Date.now() < 3600000 && new Date(task.end_date || '').getTime() > Date.now() && task.status !== 'Done') && <AlertCircle size={12} color="#f87171" />}
                       </div>
                     </td>
                     <td>

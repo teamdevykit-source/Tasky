@@ -9,6 +9,7 @@ import { ProfileSettings } from './features/profile/components/ProfileSettings';
 import { Auth } from './features/auth/components/Auth';
 import { AdminSettings } from './features/admin/components/AdminSettings';
 import { CompleteProfileModal } from './features/auth/components/CompleteProfileModal';
+import { RemindersView } from './features/reminders/components/RemindersView';
 import { useStore } from './store/useStore';
 import { Menu } from 'lucide-react';
 import './index.css';
@@ -19,28 +20,26 @@ function App() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const currentUser = useStore(s => s.currentUser);
   const initialize = useStore(s => s.initialize);
+  const checkTaskDeadlines = useStore(s => s.checkTaskDeadlines);
   const viewMode = useStore(s => s.viewMode);
   const isCheckingSession = useStore(s => s.isCheckingSession);
   const isInvitedSession = useStore(s => s.isInvitedSession);
 
+  // Realtime subscriptions handle data sync, so we no longer need the aggressive 
+  // hard reload on focus which was causing issues with date pickers and modals.
   useEffect(() => {
     initialize();
-  }, [initialize]);
-
-  // Hard reload when the browser tab becomes active again (User requested)
-  useEffect(() => {
-    const handleBlur = () => {
-      window.onfocus = () => {
-        window.location.reload();
-      };
-    };
     
-    window.addEventListener('blur', handleBlur);
-    return () => {
-      window.removeEventListener('blur', handleBlur);
-      window.onfocus = null;
-    };
-  }, []);
+    // Initial check
+    checkTaskDeadlines();
+    
+    // Check every minute
+    const interval = setInterval(() => {
+      checkTaskDeadlines();
+    }, 60000);
+    
+    return () => clearInterval(interval);
+  }, [initialize, checkTaskDeadlines]);
 
   if (isCheckingSession) {
     return (
@@ -120,6 +119,8 @@ function App() {
           <MyTasksView onSelectTask={setSelectedTaskId} />
         ) : viewMode === 'profile' ? (
           <ProfileSettings />
+        ) : viewMode === 'reminders' ? (
+          <RemindersView onSelectTask={setSelectedTaskId} />
         ) : (
           <TaskBoard onSelectTask={setSelectedTaskId} />
         )}
