@@ -37,6 +37,7 @@ interface StoreState {
   deleteCategory: (id: string) => Promise<void>;
   addStatus: (name: string, color: string) => Promise<void>;
   deleteStatus: (id: string) => Promise<void>;
+  deleteUser: (userId: string) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
   dismissReminder: (reminderId: string) => void;
   checkTaskDeadlines: () => void;
