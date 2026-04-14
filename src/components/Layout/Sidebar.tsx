@@ -1,14 +1,13 @@
 import React from 'react';
 import { useStore } from '../../store/useStore';
-import { Plus, KanbanSquare, List, Settings, LogOut, Zap, Sun, Moon, X, LayoutDashboard, Lock, Bell } from 'lucide-react';
+import { KanbanSquare, List, Settings, LogOut, Zap, Sun, Moon, X, LayoutDashboard, Lock, Bell } from 'lucide-react';
 
 interface SidebarProps {
-  onOpenCreateModal: () => void;
   isOpen: boolean;
   onClose: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ onOpenCreateModal, isOpen, onClose }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const currentUser = useStore(s => s.currentUser);
   const viewMode = useStore(s => s.viewMode);
   const setViewMode = useStore(s => s.setViewMode);

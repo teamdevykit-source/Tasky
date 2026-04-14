@@ -72,7 +72,6 @@ function App() {
   return (
     <div className="app-layout">
       <Sidebar 
-        onOpenCreateModal={() => setIsCreateModalOpen(true)} 
         isOpen={isMobileSidebarOpen}
         onClose={() => setIsMobileSidebarOpen(false)}
       />
