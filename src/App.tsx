@@ -114,15 +114,15 @@ function App() {
         {viewMode === 'settings' ? (
           <AdminSettings />
         ) : viewMode === 'dashboard' ? (
-          <DashboardAnalytics />
+          <DashboardAnalytics onOpenCreateModal={() => setIsCreateModalOpen(true)} />
         ) : viewMode === 'my-tasks' ? (
           <MyTasksView onSelectTask={setSelectedTaskId} />
         ) : viewMode === 'profile' ? (
           <ProfileSettings />
         ) : viewMode === 'reminders' ? (
-          <RemindersView onSelectTask={setSelectedTaskId} />
+          <RemindersView onSelectTask={setSelectedTaskId} onOpenCreateModal={() => setIsCreateModalOpen(true)} />
         ) : (
-          <TaskBoard onSelectTask={setSelectedTaskId} />
+          <TaskBoard onSelectTask={setSelectedTaskId} onOpenCreateModal={() => setIsCreateModalOpen(true)} />
         )}
       </main>
       

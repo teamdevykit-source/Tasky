@@ -156,15 +156,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ onOpenCreateModal, isOpen, onC
             </button>
           )}
         </nav>
-
-        {/* Create Task Button */}
-        <button className="primary-btn" onClick={onOpenCreateModal} style={{ 
-          width: '100%', marginTop: '1.5rem', justifyContent: 'center', 
-          padding: '0.75rem' 
-        }}>
-          <Plus size={17} />
-          <span>New Task</span>
-        </button>
       </div>
 
       {/* Bottom Section: Theme + User */}

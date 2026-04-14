@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useStore } from '../../../store/useStore';
-import { Plus, Trash2, Settings, Users, Layers, Tag, ShieldCheck } from 'lucide-react';
+import { Plus, Trash2, Settings, Users, Layers, Tag, ShieldCheck, Mail } from 'lucide-react';
 import { ConfirmationModal } from '../../../components/Shared/ConfirmationModal';
 
 export const AdminSettings: React.FC = () => {
@@ -155,7 +155,16 @@ export const AdminSettings: React.FC = () => {
                         <span style={{ fontWeight: 600, color: 'var(--text-1)' }}>{user.full_name}</span>
                       </div>
                     </td>
-                    <td style={{ color: 'var(--text-3)' }}>{user.email}</td>
+                    <td style={{ color: 'var(--text-3)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        {user.email}
+                        {user.email && (
+                          <a href={`mailto:${user.email}`} title={`Email ${user.full_name}`} style={{ color: 'var(--primary)', opacity: 0.6, display: 'flex', alignItems: 'center' }}>
+                            <Mail size={13} />
+                          </a>
+                        )}
+                      </div>
+                    </td>
                     <td>
                       <input 
                         type="text"

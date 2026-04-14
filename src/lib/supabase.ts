@@ -37,6 +37,8 @@ export interface Status {
   sort_order: number;
 }
 
+export type RecurrenceType = 'daily' | 'weekly' | 'monthly';
+
 export interface Task {
   id: string;
   title: string;
@@ -50,4 +52,11 @@ export interface Task {
   start_date?: string;
   end_date?: string;
   created_at: string;
+  // Recurrence fields
+  is_recurring?: boolean;
+  recurrence_type?: RecurrenceType | null;
+  recurrence_time?: string | null;   // HH:MM format
+  recurrence_day?: number | null;    // 0-6 for weekly (Sun-Sat), 1-31 for monthly
+  next_recurrence_at?: string | null;
+  parent_task_id?: string | null;
 }

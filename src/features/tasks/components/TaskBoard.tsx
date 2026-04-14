@@ -1,10 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../../../store/useStore';
 import { TaskCard } from './TaskCard';
-import { Search, Filter, ArrowUpDown, Clock, User as UserIcon, Tag, LayoutGrid, ListChecks, Lock, AlertTriangle, AlertCircle } from 'lucide-react';
+import { Search, Filter, ArrowUpDown, Clock, User as UserIcon, Tag, LayoutGrid, ListChecks, Lock, AlertTriangle, AlertCircle, Plus } from 'lucide-react';
 import { formatDateTime } from '../../../lib/format';
 
-export const TaskBoard: React.FC<{ onSelectTask: (id: string | null) => void }> = ({ onSelectTask }) => {
+export const TaskBoard: React.FC<{ 
+  onSelectTask: (id: string | null) => void,
+  onOpenCreateModal: () => void 
+}> = ({ onSelectTask, onOpenCreateModal }) => {
   const viewMode = useStore(s => s.viewMode);
   const currentUser = useStore(s => s.currentUser);
   const updateTaskStatus = useStore(s => s.updateTaskStatus);
@@ -183,17 +186,23 @@ export const TaskBoard: React.FC<{ onSelectTask: (id: string | null) => void }> 
     return (
       <div className="animate-fadeIn">
         <header style={{ marginBottom: '1.5rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.25rem' }}>
-            <div style={{ 
-              width: '36px', height: '36px', borderRadius: 'var(--radius-md)', 
-              background: 'var(--primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center' 
-            }}>
-              <ListChecks size={18} style={{ color: 'var(--primary)' }} />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{ 
+                width: '36px', height: '36px', borderRadius: 'var(--radius-md)', 
+                background: 'var(--primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center' 
+              }}>
+                <ListChecks size={18} style={{ color: 'var(--primary)' }} />
+              </div>
+              <div>
+                <h1 style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--text-1)' }}>Scrum Table</h1>
+                <p style={{ color: 'var(--text-4)', fontSize: '0.85rem' }}>Analytical overview of all tasks and operations.</p>
+              </div>
             </div>
-            <div>
-              <h1 style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--text-1)' }}>Scrum Table</h1>
-              <p style={{ color: 'var(--text-4)', fontSize: '0.85rem' }}>Analytical overview of all tasks and operations.</p>
-            </div>
+            
+            <button className="primary-btn" onClick={onOpenCreateModal}>
+              <Plus size={16} /> New Task
+            </button>
           </div>
         </header>
 
@@ -361,17 +370,23 @@ export const TaskBoard: React.FC<{ onSelectTask: (id: string | null) => void }> 
   return (
     <div className="animate-fadeIn">
       <header style={{ marginBottom: '1.5rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.25rem' }}>
-          <div style={{ 
-            width: '36px', height: '36px', borderRadius: 'var(--radius-md)', 
-            background: 'var(--primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center' 
-          }}>
-            <LayoutGrid size={18} style={{ color: 'var(--primary)' }} />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div style={{ 
+              width: '36px', height: '36px', borderRadius: 'var(--radius-md)', 
+              background: 'var(--primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center' 
+            }}>
+              <LayoutGrid size={18} style={{ color: 'var(--primary)' }} />
+            </div>
+            <div>
+              <h1 style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--text-1)' }}>Kanban Board</h1>
+              <p style={{ color: 'var(--text-4)', fontSize: '0.85rem' }}>Drag and drop tasks between status columns.</p>
+            </div>
           </div>
-          <div>
-            <h1 style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--text-1)' }}>Kanban Board</h1>
-            <p style={{ color: 'var(--text-4)', fontSize: '0.85rem' }}>Drag and drop tasks between status columns.</p>
-          </div>
+
+          <button className="primary-btn" onClick={onOpenCreateModal}>
+            <Plus size={16} /> New Task
+          </button>
         </div>
       </header>
 

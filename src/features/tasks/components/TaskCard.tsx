@@ -1,7 +1,7 @@
 import React from 'react';
 import type { Task } from '../../../lib/supabase';
 import { useStore } from '../../../store/useStore';
-import { Calendar, Eye, GripVertical, Lock, AlertTriangle, AlertCircle } from 'lucide-react';
+import { Calendar, Eye, GripVertical, Lock, AlertTriangle, AlertCircle, Repeat } from 'lucide-react';
 import { formatDateTime } from '../../../lib/format';
 
 export const TaskCard: React.FC<{ task: Task, onClick: () => void }> = ({ task, onClick }) => {
@@ -85,6 +85,7 @@ export const TaskCard: React.FC<{ task: Task, onClick: () => void }> = ({ task, 
           {isOverdue && <div title="OVERDUE" style={{ color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '0.2rem', fontSize: '0.6rem', fontWeight: 800 }}><AlertTriangle size={12}/></div>}
           {isUrgent && <div title="ENDS SOON ( < 1h )" style={{ color: '#f87171', display: 'flex', alignItems: 'center', gap: '0.2rem', fontSize: '0.6rem', fontWeight: 800 }}><AlertCircle size={12}/></div>}
           {task.is_self_task && <Lock size={11} style={{ color: 'var(--primary)', opacity: 0.8 }} />}
+          {task.is_recurring && <Repeat size={11} style={{ color: '#34d399', opacity: 0.85 }} />}
           {isObserver && <Eye size={11} style={{ color: 'var(--success)', opacity: 0.7 }} />}
           {!isLocked && <GripVertical size={11} style={{ color: 'var(--text-4)', opacity: 0.4 }} />}
         </div>
@@ -126,19 +127,21 @@ export const TaskCard: React.FC<{ task: Task, onClick: () => void }> = ({ task, 
             </div>
 
             {/* Owner */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <span style={{ fontSize: '0.55rem', fontWeight: 800, color: 'var(--text-4)', width: '32px' }}>OWNER</span>
-              {assignee ? (
-                <>
-                  <div className="avatar" style={{ width: '18px', height: '18px', fontSize: '0.5rem', borderWidth: '1.5px' }}>
-                    {assignee.full_name.charAt(0).toUpperCase()}
-                  </div>
-                  <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-2)' }}>
-                    {assignee.full_name.split(' ')[0]}
-                  </span>
-                </>
-              ) : <span style={{ fontSize: '0.65rem', fontStyle: 'italic', color: 'var(--text-4)' }}>Unassigned</span>}
-            </div>
+            {!task.is_self_task && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <span style={{ fontSize: '0.55rem', fontWeight: 800, color: 'var(--text-4)', width: '32px' }}>OWNER</span>
+                {assignee ? (
+                  <>
+                    <div className="avatar" style={{ width: '18px', height: '18px', fontSize: '0.5rem', borderWidth: '1.5px' }}>
+                      {assignee.full_name.charAt(0).toUpperCase()}
+                    </div>
+                    <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-2)' }}>
+                      {assignee.full_name.split(' ')[0]}
+                    </span>
+                  </>
+                ) : <span style={{ fontSize: '0.65rem', fontStyle: 'italic', color: 'var(--text-4)' }}>Unassigned</span>}
+              </div>
+            )}
 
             {/* Observers */}
             {task.observers && task.observers.length > 0 && (

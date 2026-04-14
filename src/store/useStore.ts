@@ -15,7 +15,7 @@ interface StoreState {
   statuses: Status[];
   theme: Theme;
   alertData: { message: string, type: 'error' | 'success' } | null;
-  reminders: { id: string, taskId: string, message: string, type: 'warning' | 'urgent' }[];
+  reminders: { id: string, taskId: string, message: string, type: 'warning' | 'urgent' | 'overdue' }[];
 
   setAlertData: (data: { message: string, type: 'error' | 'success' } | null) => void;
   viewMode: 'dashboard' | 'kanban' | 'scrum' | 'settings' | 'my-tasks' | 'profile' | 'reminders';
@@ -119,8 +119,20 @@ export const useStore = create<StoreState>((set, get) => ({
       const diffMs = deadline.getTime() - now.getTime();
       const diffHrs = diffMs / (1000 * 60 * 60);
 
-      // 1. One Hour Reminder (Urgent)
-      if (diffHrs > 0 && diffHrs <= 1) {
+      // 1. Overdue (Late)
+      if (diffHrs <= 0) {
+        const rId = `${task.id}-overdue`;
+        if (!reminders.find(r => r.id === rId)) {
+          newReminders.push({
+            id: rId,
+            taskId: task.id,
+            message: `LATE: "${task.title}" was due at ${task.end_date}!`,
+            type: 'overdue'
+          });
+        }
+      }
+      // 2. One Hour Reminder (Urgent)
+      else if (diffHrs > 0 && diffHrs <= 1) {
         const rId = `${task.id}-one-hour`;
         if (!reminders.find(r => r.id === rId)) {
           newReminders.push({
@@ -131,7 +143,7 @@ export const useStore = create<StoreState>((set, get) => ({
           });
         }
       }
-      // 2. One Day Reminder (Warning)
+      // 3. One Day Reminder (Warning)
       else if (diffHrs > 1 && diffHrs <= 24) {
         const rId = `${task.id}-one-day`;
         if (!reminders.find(r => r.id === rId)) {
@@ -272,6 +284,7 @@ export const useStore = create<StoreState>((set, get) => ({
         if (statuses) set({ statuses });
 
         set({ isLoaded: true });
+        get().checkTaskDeadlines();
         if (isSilent) {
           // If silent, just update parts of state if needed, but usually initialize has set them already
         }
@@ -317,6 +330,7 @@ export const useStore = create<StoreState>((set, get) => ({
     // 4. Hybrid Sync Fallback: Auto-refresh data every 20 seconds
     setInterval(() => {
       get().refreshData?.();
+      get().checkTaskDeadlines?.();
     }, 20000); 
 
     // Realtime subscriptions (non-blocking)
@@ -355,6 +369,7 @@ export const useStore = create<StoreState>((set, get) => ({
             }
             return state;
           });
+          get().checkTaskDeadlines();
         })
         .subscribe();
 

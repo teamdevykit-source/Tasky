@@ -1,8 +1,8 @@
 import React, { useMemo } from 'react';
 import { useStore } from '../../../store/useStore';
-import { BarChart, Activity, Clock, Users, Zap, LayoutDashboard, Target, ShieldCheck, ChevronDown, ChevronUp } from 'lucide-react';
+import { BarChart, Activity, Clock, Users, Zap, LayoutDashboard, Target, ShieldCheck, ChevronDown, ChevronUp, Mail } from 'lucide-react';
 
-export const DashboardAnalytics: React.FC = () => {
+export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = ({ onOpenCreateModal }) => {
   const [expandedRole, setExpandedRole] = React.useState<'Admin' | 'Worker' | null>(null);
   const tasks = useStore(s => s.tasks);
   const profiles = useStore(s => s.profiles);
@@ -70,17 +70,23 @@ export const DashboardAnalytics: React.FC = () => {
   return (
     <div className="animate-fadeIn">
       <header style={{ marginBottom: '2rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
-          <div style={{ 
-            width: '36px', height: '36px', borderRadius: 'var(--radius-md)', 
-            background: 'var(--primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center' 
-          }}>
-            <LayoutDashboard size={18} style={{ color: 'var(--primary)' }} />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div style={{ 
+              width: '36px', height: '36px', borderRadius: 'var(--radius-md)', 
+              background: 'var(--primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center' 
+            }}>
+              <LayoutDashboard size={18} style={{ color: 'var(--primary)' }} />
+            </div>
+            <div>
+              <h1 style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--text-1)' }}>Analytics Dashboard</h1>
+              <p style={{ color: 'var(--text-4)', fontSize: '0.85rem' }}>High-level overview of your workspace performance.</p>
+            </div>
           </div>
-          <div>
-            <h1 style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--text-1)' }}>Analytics Dashboard</h1>
-            <p style={{ color: 'var(--text-4)', fontSize: '0.85rem' }}>High-level overview of your workspace performance.</p>
-          </div>
+
+          <button className="primary-btn" onClick={onOpenCreateModal}>
+            <Zap size={16} /> New Task
+          </button>
         </div>
 
         {/* Dynamic Welcome Message */}
@@ -243,10 +249,15 @@ export const DashboardAnalytics: React.FC = () => {
                     {profiles.filter(p => p.role === 'Admin').map(p => (
                       <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border-subtle)' }}>
                         <div className="avatar" style={{ width: '24px', height: '24px', fontSize: '0.6rem' }}>{p.full_name.charAt(0).toUpperCase()}</div>
-                        <div>
+                        <div style={{ flex: 1 }}>
                           <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-1)' }}>{p.full_name}</div>
                           <div style={{ fontSize: '0.65rem', color: 'var(--text-4)' }}>{p.email}</div>
                         </div>
+                        {p.email && (
+                          <a href={`mailto:${p.email}`} title={`Email ${p.full_name}`} style={{ color: 'var(--text-4)', opacity: 0.5 }}>
+                            <Mail size={12} />
+                          </a>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -275,10 +286,15 @@ export const DashboardAnalytics: React.FC = () => {
                     {profiles.filter(p => p.role === 'Worker').map(p => (
                       <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border-subtle)' }}>
                         <div className="avatar" style={{ width: '24px', height: '24px', fontSize: '0.6rem' }}>{p.full_name.charAt(0).toUpperCase()}</div>
-                        <div>
+                        <div style={{ flex: 1 }}>
                           <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-1)' }}>{p.full_name}</div>
                           <div style={{ fontSize: '0.65rem', color: 'var(--text-4)' }}>{p.email}</div>
                         </div>
+                        {p.email && (
+                          <a href={`mailto:${p.email}`} title={`Email ${p.full_name}`} style={{ color: 'var(--text-4)', opacity: 0.5 }}>
+                            <Mail size={12} />
+                          </a>
+                        )}
                       </div>
                     ))}
                   </div>

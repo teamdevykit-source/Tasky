@@ -1,5 +1,6 @@
 import React from 'react';
 import { useStore } from '../../../store/useStore';
+import { Mail } from 'lucide-react';
 
 export const ManageUsers: React.FC = () => {
   const { profiles, updateUserRole, currentUser } = useStore();
@@ -29,7 +30,29 @@ export const ManageUsers: React.FC = () => {
           {profiles.map(user => (
             <tr key={user.id} className="scrum-row">
               <td style={{ fontWeight: 500 }}>{user.full_name}</td>
-              <td>{user.email}</td>
+              <td style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                {user.email}
+                {user.email && (
+                  <a 
+                    href={`mailto:${user.email}`}
+                    style={{ 
+                      color: 'var(--primary)', 
+                      opacity: 0.6, 
+                      display: 'flex', 
+                      alignItems: 'center',
+                      padding: '4px',
+                      borderRadius: '4px',
+                      background: 'var(--surface-3)',
+                      transition: 'all 0.2s'
+                    }}
+                    title={`Email ${user.full_name}`}
+                    onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                    onMouseLeave={(e) => e.currentTarget.style.opacity = '0.6'}
+                  >
+                    <Mail size={14} />
+                  </a>
+                )}
+              </td>
               <td>
                 <select 
                   className="task-status-select"

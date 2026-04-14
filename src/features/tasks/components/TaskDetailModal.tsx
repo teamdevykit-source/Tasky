@@ -1,6 +1,6 @@
 import React from 'react';
 import { useStore } from '../../../store/useStore';
-import { X, Clock, Trash2, CheckCircle2, AlignLeft, Eye, Lock } from 'lucide-react';
+import { X, Clock, Trash2, CheckCircle2, AlignLeft, Eye, Lock, Repeat, Mail } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { formatDateTime } from '../../../lib/format';
@@ -95,6 +95,16 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
                 <Lock size={12} /> Self Task
               </div>
             )}
+            {task.is_recurring && (
+              <div style={{ 
+                background: 'rgba(52,211,153,0.2)', padding: '0.25rem 0.7rem', 
+                borderRadius: 'var(--radius-full)', fontSize: '0.7rem', fontWeight: 700, 
+                textTransform: 'uppercase', letterSpacing: '0.08em', display: 'flex', alignItems: 'center', gap: '0.35rem',
+                border: '1px solid rgba(52,211,153,0.3)'
+              }}>
+                <Repeat size={12} /> Recurring
+              </div>
+            )}
           </div>
           <h1 style={{ fontSize: '1.75rem', fontWeight: 700, lineHeight: 1.25, paddingRight: '2rem' }}>{task.title}</h1>
         </div>
@@ -168,20 +178,35 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
           {/* Right: Sidebar meta */}
           <aside style={{ padding: '2rem 1.75rem', background: 'var(--surface-2)', display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
             {/* Assignee */}
-            <div>
-              <h3 style={metaLabel}>Assignee</h3>
-              <div style={{ 
-                display: 'flex', alignItems: 'center', gap: '0.6rem', 
-                background: 'var(--surface)', padding: '0.8rem', borderRadius: 'var(--radius-md)', 
-                border: '1px solid var(--border)' 
-              }}>
-                <div className="avatar" style={{ width: '32px', height: '32px', fontSize: '0.8rem' }}>{assignee?.full_name.charAt(0)}</div>
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-1)' }}>{assignee?.full_name || 'Unassigned'}</div>
-                  <div style={{ fontSize: '0.68rem', color: 'var(--text-4)' }}>Assignee</div>
+            {!task.is_self_task && (
+              <div>
+                <h3 style={metaLabel}>Assignee</h3>
+                <div style={{ 
+                  display: 'flex', alignItems: 'center', gap: '0.6rem', 
+                  background: 'var(--surface)', padding: '0.8rem', borderRadius: 'var(--radius-md)', 
+                  border: '1px solid var(--border)' 
+                }}>
+                  <div className="avatar" style={{ width: '32px', height: '32px', fontSize: '0.8rem' }}>{assignee?.full_name.charAt(0)}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-1)' }}>{assignee?.full_name || 'Unassigned'}</div>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-4)' }}>Assignee</div>
+                  </div>
+                  {assignee?.email && (
+                    <button 
+                      onClick={() => {
+                        const subject = encodeURIComponent(`Task Activity: ${task.title}`);
+                        const body = encodeURIComponent(`Hello ${assignee.full_name},\n\nI'm following up on the task: "${task.title}".\n\nCurrent Status: ${task.status}\nDeadline: ${task.end_date || 'None'}\n\nPlease update your progress in the app.`);
+                        window.location.href = `mailto:${assignee.email}?subject=${subject}&body=${body}`;
+                      }}
+                      style={{ background: 'var(--surface-3)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.4rem', color: 'var(--text-3)', cursor: 'pointer' }}
+                      title="Notify via Email"
+                    >
+                      <Mail size={14} />
+                    </button>
+                  )}
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Creator */}
             {creator && (
@@ -234,6 +259,48 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
                     })
                   ) : (
                     <span style={{ fontSize: '0.78rem', color: 'var(--text-4)' }}>No observers.</span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Recurrence Info */}
+            {task.is_recurring && task.recurrence_type && (
+              <div>
+                <h3 style={metaLabel}>
+                  <Repeat size={12} style={{ display: 'inline', marginRight: '0.3rem', opacity: 0.5 }} />
+                  Recurrence
+                </h3>
+                <div style={{
+                  background: 'rgba(52,211,153,0.06)', borderRadius: 'var(--radius-md)',
+                  border: '1px solid rgba(52,211,153,0.15)', padding: '0.8rem',
+                  display: 'flex', flexDirection: 'column', gap: '0.5rem'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-4)', fontWeight: 600, width: '58px' }}>Freq:</span>
+                    <span style={{ fontSize: '0.82rem', color: '#34d399', fontWeight: 700, textTransform: 'capitalize' }}>{task.recurrence_type}</span>
+                  </div>
+                  {task.recurrence_type === 'weekly' && task.recurrence_day != null && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-4)', fontWeight: 600, width: '58px' }}>Day:</span>
+                      <span style={{ fontSize: '0.82rem', color: 'var(--text-1)', fontWeight: 600 }}>
+                        {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][task.recurrence_day]}
+                      </span>
+                    </div>
+                  )}
+                  {task.recurrence_type === 'monthly' && task.recurrence_day != null && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-4)', fontWeight: 600, width: '58px' }}>Day:</span>
+                      <span style={{ fontSize: '0.82rem', color: 'var(--text-1)', fontWeight: 600 }}>
+                        {task.recurrence_day}{task.recurrence_day === 1 ? 'st' : task.recurrence_day === 2 ? 'nd' : task.recurrence_day === 3 ? 'rd' : 'th'} of month
+                      </span>
+                    </div>
+                  )}
+                  {task.recurrence_time && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-4)', fontWeight: 600, width: '58px' }}>Time:</span>
+                      <span style={{ fontSize: '0.82rem', color: 'var(--text-1)', fontWeight: 600 }}>{task.recurrence_time}</span>
+                    </div>
                   )}
                 </div>
               </div>
