@@ -77,34 +77,15 @@ function App() {
       />
       <main className="main-content">
         {/* Mobile Header Toggle */}
-        <div 
-          className="mobile-header"
-          style={{
-            display: window.innerWidth <= 1024 ? 'flex' : 'none',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '1rem 0',
-            marginBottom: '1rem',
-            borderBottom: '1px solid var(--border)'
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <div style={{ 
-              width: '32px', height: '32px', 
-              background: 'linear-gradient(135deg, var(--primary-dark), var(--primary))', 
-              color: 'white', borderRadius: 'var(--radius-sm)', 
-              display: 'flex', alignItems: 'center', justifyContent: 'center', 
-              fontWeight: '800', fontSize: '0.85rem'
-            }}>M</div>
-            <span style={{ fontWeight: 700, color: 'var(--text-1)' }}>EL MERAKI</span>
+        <div className="mobile-header">
+          <div className="mobile-brand">
+            <div className="mobile-brand-mark">M</div>
+            <span>EL MERAKI</span>
           </div>
-          <button 
+          <button
+            className="mobile-menu-btn"
             onClick={() => setIsMobileSidebarOpen(true)}
-            style={{ 
-              padding: '0.5rem', background: 'var(--surface-3)', 
-              border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
-              color: 'var(--text-1)'
-            }}
+            aria-label="Open navigation"
           >
             <Menu size={20} />
           </button>

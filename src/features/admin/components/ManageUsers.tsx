@@ -1,6 +1,7 @@
 import React from 'react';
 import { useStore } from '../../../store/useStore';
 import { Mail } from 'lucide-react';
+import { AppSelect } from '../../../components/Shared/AppSelect';
 
 export const ManageUsers: React.FC = () => {
   const { profiles, updateUserRole, currentUser } = useStore();
@@ -54,14 +55,13 @@ export const ManageUsers: React.FC = () => {
                 )}
               </td>
               <td>
-                <select 
-                  className="task-status-select"
+                <AppSelect
                   value={user.role}
-                  onChange={(e) => updateUserRole(user.id, e.target.value as any)}
+                  onChange={(value) => updateUserRole(user.id, value as any)}
                   disabled={user.id === currentUser.id} // Don't let admin demote themselves directly strictly for safety
-                >
-                  {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
-                </select>
+                  options={ROLES.map(role => ({ value: role, label: role }))}
+                  style={{ width: '130px' }}
+                />
               </td>
             </tr>
           ))}

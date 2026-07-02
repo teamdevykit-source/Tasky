@@ -11,9 +11,12 @@ export const RemindersView: React.FC<{
   const tasks = useStore(s => s.tasks);
   const profiles = useStore(s => s.profiles);
   const categories = useStore(s => s.categories);
+  const statuses = useStore(s => s.statuses);
   const currentUser = useStore(s => s.currentUser);
   const dismissReminder = useStore(s => s.dismissReminder);
   const getVisibleTasks = useStore(s => s.getVisibleTasks);
+  const sendTaskReminderEmail = useStore(s => s.sendTaskReminderEmail);
+  const updateTaskStatus = useStore(s => s.updateTaskStatus);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
@@ -53,29 +56,19 @@ export const RemindersView: React.FC<{
     return { task, assignee };
   };
 
-  const handleEmailReminder = (task: any, assignee: any) => {
+  const handleEmailReminder = async (task: any, assignee: any) => {
     if (!assignee?.email) {
       alert("This user doesn't have an email address associated with their profile.");
       return;
     }
-    
-    const isOverdue = task.end_date && new Date(task.end_date) < new Date();
-    const statusLabel = isOverdue ? '🚨 OVERDUE' : '⏳ REMINDER';
-    
-    const subject = encodeURIComponent(`${statusLabel}: ${task.title}`);
-    const body = encodeURIComponent(
-      `Hello ${assignee.full_name},\n\n` +
-      `This is a notification regarding your assigned task:\n\n` +
-      `📌 TASK: ${task.title}\n` +
-      `📅 DEADLINE: ${task.end_date ? formatDateTime(task.end_date) : 'No deadline set'}\n` +
-      `📂 CATEGORY: ${task.category || 'General'}\n` +
-      `💬 DESCRIPTION: ${task.description || 'No additional details.'}\n\n` +
-      `Please check the Task Manager app to update your progress.\n\n` +
-      `Best regards,\n` +
-      `${currentUser.full_name}`
-    );
 
-    window.location.href = `mailto:${assignee.email}?subject=${subject}&body=${body}`;
+    await sendTaskReminderEmail(task.id);
+  };
+
+  const handleMarkDone = async (taskId: string, reminderId: string) => {
+    const doneStatus = statuses.find(s => s.name.toLowerCase() === 'done')?.name || 'Done';
+    await updateTaskStatus(taskId, doneStatus);
+    dismissReminder(reminderId);
   };
 
   const ReminderCard = ({ r, color, label }: { r: any; color: string; label: string }) => {
@@ -124,7 +117,8 @@ export const RemindersView: React.FC<{
             </button>
             <button 
               className="close-btn" 
-              onClick={(e) => { e.stopPropagation(); dismissReminder(r.id); }}
+              title="Mark task as done"
+              onClick={(e) => { e.stopPropagation(); handleMarkDone(task.id, r.id); }}
               style={{ background: `${color}1A`, color }}
             >
               <CheckCircle2 size={16} />

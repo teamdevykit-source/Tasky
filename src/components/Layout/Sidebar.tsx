@@ -25,13 +25,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     <>
       {/* Mobile Backdrop */}
       {isOpen && (
-        <div 
+        <div
           className="sidebar-backdrop"
           onClick={onClose}
-          style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', 
-            backdropFilter: 'blur(4px)', zIndex: 90, display: window.innerWidth > 1024 ? 'none' : 'block'
-          }}
         />
       )}
       
@@ -57,11 +53,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           <button 
             onClick={onClose}
             className="mobile-close-btn"
-            style={{ 
-              display: window.innerWidth > 1024 ? 'none' : 'flex',
-              padding: '0.4rem', borderRadius: 'var(--radius-sm)', 
-              background: 'var(--surface)', color: 'var(--text-3)', border: '1px solid var(--border)'
-            }}
+            aria-label="Close navigation"
           >
             <X size={18} />
           </button>
@@ -104,7 +96,20 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           >
             <Lock size={17} />
             <span>My Tasks</span>
-            <div style={{ marginLeft: 'auto', background: 'var(--primary-light)', padding: '0.1rem 0.4rem', borderRadius: 'var(--radius-full)', fontSize: '0.65rem', fontWeight: 700, color: 'var(--primary)' }}>Private</div>
+            <div
+              className="nav-pill nav-pill-private"
+              style={{
+                marginLeft: 'auto',
+                background: 'var(--primary-light)',
+                padding: '0.1rem 0.4rem',
+                borderRadius: 'var(--radius-full)',
+                fontSize: '0.65rem',
+                fontWeight: 700,
+                color: 'var(--primary)'
+              }}
+            >
+              Private
+            </div>
           </button>
 
           <button 
@@ -115,7 +120,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             <Bell size={17} />
             <span>Reminders</span>
             {reminders.length > 0 && (
-              <div style={{ 
+              <div className="nav-pill nav-pill-count" style={{ 
                 marginLeft: 'auto', 
                 background: reminders.some(r => r.type === 'urgent') ? 'var(--danger)' : 'var(--primary)', 
                 padding: '0.1rem 0.4rem', 

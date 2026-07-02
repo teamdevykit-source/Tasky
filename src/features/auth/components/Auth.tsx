@@ -103,7 +103,7 @@ export const Auth = () => {
           </div>
         </div>
         <div className="auth-footer-brand">
-          © 2026 El Meraki Ops. All rights Reserved.
+          (c) 2026 El Meraki Ops. All rights reserved.
         </div>
       </div>
 
@@ -179,7 +179,7 @@ export const Auth = () => {
                 <input
                   type={showPassword ? "text" : "password"}
                   className="input-modern"
-                  placeholder="••••••••"
+                  placeholder="********"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   required
@@ -226,7 +226,7 @@ export const Auth = () => {
             display: grid;
             grid-template-columns: 1fr 520px;
             min-height: 100vh;
-            background: #050810;
+            background: var(--bg);
         }
 
         .auth-brand-section {
@@ -235,34 +235,28 @@ export const Auth = () => {
             flex-direction: column;
             justify-content: space-between;
             position: relative;
-            background: radial-gradient(ellipse at top left, #1e1b4b 0%, #050810 70%);
+            background:
+              radial-gradient(circle at 18% 18%, rgba(63, 109, 246, 0.18), transparent 18rem),
+              radial-gradient(circle at 72% 64%, rgba(127, 79, 234, 0.12), transparent 22rem),
+              linear-gradient(145deg, #0a0718 0%, #100c22 52%, #151129 100%);
             overflow: hidden;
         }
 
         .auth-brand-section::before {
             content: '';
             position: absolute;
-            top: -15%;
-            right: -15%;
-            width: 500px;
-            height: 500px;
-            background: var(--primary-dark);
-            filter: blur(180px);
-            opacity: 0.12;
-            border-radius: 50%;
+            inset: 0;
+            background:
+              linear-gradient(rgba(210,218,255,0.05) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(210,218,255,0.05) 1px, transparent 1px);
+            background-size: 44px 44px;
+            opacity: 0.18;
         }
 
         .auth-brand-section::after {
             content: '';
             position: absolute;
-            bottom: 10%;
-            left: 20%;
-            width: 300px;
-            height: 300px;
-            background: #7c3aed;
-            filter: blur(150px);
-            opacity: 0.06;
-            border-radius: 50%;
+            display: none;
         }
 
         .auth-brand-content {
@@ -274,7 +268,7 @@ export const Auth = () => {
             display: inline-flex;
             align-items: center;
             gap: 0.4rem;
-            background: rgba(129,140,248,0.08);
+            background: rgba(59, 53, 220, 0.16);
             padding: 0.35rem 0.75rem;
             border-radius: var(--radius-full);
             color: var(--primary);
@@ -282,7 +276,7 @@ export const Auth = () => {
             font-weight: 700;
             letter-spacing: 0.12em;
             margin-bottom: 2.5rem;
-            border: 1px solid rgba(129,140,248,0.12);
+            border: 1px solid rgba(210,218,255,0.12);
         }
 
         .brand-tagline {
@@ -295,13 +289,13 @@ export const Auth = () => {
         }
 
         .text-gradient {
-            background: linear-gradient(135deg, #818cf8, #c084fc);
+            background: linear-gradient(135deg, #2e86ee, #4b46d8 54%, #7f4fea);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
 
         .brand-description {
-            color: #64748b;
+            color: #94a3b8;
             font-size: 1.05rem;
             line-height: 1.7;
             max-width: 480px;
@@ -323,8 +317,8 @@ export const Auth = () => {
         .feature-icon {
             width: 40px;
             height: 40px;
-            background: rgba(129,140,248,0.06);
-            border: 1px solid rgba(129,140,248,0.1);
+            background: rgba(59, 53, 220, 0.18);
+            border: 1px solid rgba(210,218,255,0.12);
             border-radius: var(--radius-md);
             display: flex;
             align-items: center;
@@ -341,7 +335,7 @@ export const Auth = () => {
         }
 
         .feature-desc {
-            color: #475569;
+            color: #94a3b8;
             font-size: 0.85rem;
         }
 
@@ -385,7 +379,7 @@ export const Auth = () => {
             font-weight: 800;
             font-size: 1.35rem;
             margin-bottom: 1.5rem;
-            box-shadow: 0 8px 20px rgba(99, 102, 241, 0.25);
+            box-shadow: 0 10px 24px rgba(75, 70, 216, 0.22);
         }
 
         .auth-title {
@@ -458,7 +452,7 @@ export const Auth = () => {
         .auth-submit-btn {
             width: 100%;
             padding: 0.85rem;
-            background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+            background: linear-gradient(135deg, #3f6df6 0%, #4b46d8 72%);
             color: white;
             border: none;
             border-radius: var(--radius-md);
@@ -471,12 +465,12 @@ export const Auth = () => {
             cursor: pointer;
             transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
             margin-top: 1.75rem;
-            box-shadow: 0 6px 20px rgba(99,102,241,0.25);
+            box-shadow: 0 10px 24px rgba(75,70,216,0.22);
         }
 
         .auth-submit-btn:hover {
             transform: translateY(-2px);
-            box-shadow: 0 10px 25px rgba(99,102,241,0.35);
+            box-shadow: 0 14px 30px rgba(75,70,216,0.3);
         }
 
         .auth-submit-btn:active {

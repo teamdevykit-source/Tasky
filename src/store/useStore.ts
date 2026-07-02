@@ -4,6 +4,26 @@ import type { Profile, Task, Category, Status } from '../lib/supabase';
 
 type Theme = 'light' | 'dark';
 
+const getReminderEmailErrorMessage = async (err: any) => {
+  const message = err?.message || 'Failed to send reminder email.';
+  const context = err?.context;
+  const status = context?.status || context?.response?.status;
+
+  if (context instanceof Response) {
+    const body = await context.clone().json().catch(() => null);
+    if (body?.error) {
+      const details = body.details?.message || body.details?.error || body.details?.name;
+      return details ? `${body.error} ${details}` : body.error;
+    }
+  }
+
+  if (status === 404 || message.includes('Failed to send a request to the Edge Function')) {
+    return 'The send-task-reminder Edge Function is not deployed or is not reachable in the active Supabase project.';
+  }
+
+  return message;
+};
+
 interface StoreState {
   currentUser: Profile | null;
   isCheckingSession: boolean;
@@ -33,6 +53,8 @@ interface StoreState {
   updateUserRole: (userId: string, role: Profile['role']) => Promise<void>;
   updateUserJobTitle: (userId: string, jobTitle: string) => Promise<void>;
   inviteUser: (email: string) => Promise<void>;
+  sendTaskReminderEmail: (taskId: string) => Promise<boolean>;
+  sendEmployeeDeadlineReminders: (userId: string) => Promise<void>;
   addCategory: (name: string, color: string) => Promise<void>;
   deleteCategory: (id: string) => Promise<void>;
   addStatus: (name: string, color: string) => Promise<void>;
@@ -496,6 +518,104 @@ export const useStore = create<StoreState>((set, get) => ({
     } catch (err: any) {
       get().setAlertData({ message: "Failed to invite: " + err.message, type: 'error' });
     }
+  },
+
+  sendTaskReminderEmail: async (taskId) => {
+    const task = get().tasks.find(t => t.id === taskId);
+    const assignee = task ? get().profiles.find(p => p.id === task.assignee_id) : null;
+
+    if (!task) {
+      get().setAlertData({ message: 'Task not found.', type: 'error' });
+      return false;
+    }
+
+    if (!assignee?.email) {
+      get().setAlertData({ message: 'This task does not have an assignee email.', type: 'error' });
+      return false;
+    }
+
+    if (!task.end_date) {
+      get().setAlertData({ message: 'This task does not have a deadline to remind about.', type: 'error' });
+      return false;
+    }
+
+    try {
+      const { error } = await supabase.functions.invoke('send-task-reminder', {
+        body: { task_id: taskId }
+      });
+
+      if (error) throw error;
+
+      get().setAlertData({
+        message: `Reminder email sent to ${assignee.full_name}.`,
+        type: 'success'
+      });
+      return true;
+    } catch (err: any) {
+      const message = await getReminderEmailErrorMessage(err);
+      get().setAlertData({
+        message: `Failed to send reminder email: ${message}`,
+        type: 'error'
+      });
+      return false;
+    }
+  },
+
+  sendEmployeeDeadlineReminders: async (userId) => {
+    const { tasks, profiles } = get();
+    const user = profiles.find(p => p.id === userId);
+    const now = Date.now();
+    const remindableTasks = tasks
+      .filter(task => (
+        task.assignee_id === userId &&
+        task.status !== 'Done' &&
+        !task.is_self_task &&
+        !!task.end_date &&
+        new Date(task.end_date).getTime() > now
+      ))
+      .sort((a, b) => new Date(a.end_date || 0).getTime() - new Date(b.end_date || 0).getTime());
+
+    if (!user?.email) {
+      get().setAlertData({ message: 'This employee does not have an email address.', type: 'error' });
+      return;
+    }
+
+    if (remindableTasks.length === 0) {
+      get().setAlertData({
+        message: `${user.full_name} has no active assigned tasks with future deadlines.`,
+        type: 'error'
+      });
+      return;
+    }
+
+    let sentCount = 0;
+    let lastError = '';
+
+    for (const task of remindableTasks) {
+      try {
+        const { error } = await supabase.functions.invoke('send-task-reminder', {
+          body: { task_id: task.id }
+        });
+
+        if (error) throw error;
+        sentCount += 1;
+      } catch (err: any) {
+        lastError = await getReminderEmailErrorMessage(err);
+      }
+    }
+
+    if (sentCount > 0) {
+      get().setAlertData({
+        message: `Sent ${sentCount} reminder email${sentCount === 1 ? '' : 's'} to ${user.full_name}.`,
+        type: 'success'
+      });
+      return;
+    }
+
+    get().setAlertData({
+      message: `No reminder emails were sent. ${lastError}`,
+      type: 'error'
+    });
   },
 
   addCategory: async (name, color) => {

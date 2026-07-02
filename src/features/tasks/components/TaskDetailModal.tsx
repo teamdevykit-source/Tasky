@@ -4,6 +4,7 @@ import { X, Clock, Trash2, CheckCircle2, AlignLeft, Eye, Lock, Repeat, Mail } fr
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { formatDateTime } from '../../../lib/format';
+import { AppSelect } from '../../../components/Shared/AppSelect';
 
 export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> = ({ taskId, onClose }) => {
   const [isConfirmingDelete, setIsConfirmingDelete] = React.useState(false);
@@ -14,6 +15,7 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
   const currentUser = useStore(s => s.currentUser);
   const updateTaskStatus = useStore(s => s.updateTaskStatus);
   const deleteTask = useStore(s => s.deleteTask);
+  const sendTaskReminderEmail = useStore(s => s.sendTaskReminderEmail);
   
   const task = tasks.find(t => t.id === taskId);
   
@@ -193,11 +195,7 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
                   </div>
                   {assignee?.email && (
                     <button 
-                      onClick={() => {
-                        const subject = encodeURIComponent(`Task Activity: ${task.title}`);
-                        const body = encodeURIComponent(`Hello ${assignee.full_name},\n\nI'm following up on the task: "${task.title}".\n\nCurrent Status: ${task.status}\nDeadline: ${task.end_date || 'None'}\n\nPlease update your progress in the app.`);
-                        window.location.href = `mailto:${assignee.email}?subject=${subject}&body=${body}`;
-                      }}
+                      onClick={() => sendTaskReminderEmail(task.id)}
                       style={{ background: 'var(--surface-3)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.4rem', color: 'var(--text-3)', cursor: 'pointer' }}
                       title="Notify via Email"
                     >
@@ -310,18 +308,16 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
             <div style={{ marginTop: 'auto' }}>
               <h3 style={metaLabel}>Status</h3>
               {canEdit ? (
-                <select 
+                <AppSelect
                   value={task.status}
-                  onChange={(e) => updateTaskStatus(task.id, e.target.value)}
+                  onChange={(value) => updateTaskStatus(task.id, value)}
+                  options={statuses.map(s => ({ value: s.name, label: s.name, color: s.color }))}
+                  accentColor={statColor}
+                  fullWidth
                   style={{ 
-                    width: '100%', padding: '0.65rem', borderRadius: 'var(--radius-md)', 
-                    fontSize: '0.85rem', fontWeight: 600, color: statColor, 
-                    borderColor: `${statColor}30`, background: 'var(--surface)',
-                    border: `1.5px solid ${statColor}30`
+                    width: '100%'
                   }}
-                >
-                  {statuses.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-                </select>
+                />
               ) : (
                 <div style={{ 
                   padding: '0.65rem', background: 'var(--surface)', borderRadius: 'var(--radius-sm)', 

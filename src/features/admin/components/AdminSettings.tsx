@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { useStore } from '../../../store/useStore';
-import { Plus, Trash2, Settings, Users, Layers, Tag, ShieldCheck, Mail } from 'lucide-react';
+import { Plus, Trash2, Settings, Users, Layers, Tag, ShieldCheck, Mail, Send } from 'lucide-react';
 import { ConfirmationModal } from '../../../components/Shared/ConfirmationModal';
+import { AppSelect } from '../../../components/Shared/AppSelect';
 
 export const AdminSettings: React.FC = () => {
   const currentUser = useStore(s => s.currentUser);
   const profiles = useStore(s => s.profiles);
+  const tasks = useStore(s => s.tasks);
   const updateUserRole = useStore(s => s.updateUserRole);
   const updateUserJobTitle = useStore(s => s.updateUserJobTitle);
   const categories = useStore(s => s.categories);
@@ -16,6 +18,7 @@ export const AdminSettings: React.FC = () => {
   const deleteStatus = useStore(s => s.deleteStatus);
   const inviteUser = useStore(s => s.inviteUser);
   const deleteUser = useStore(s => s.deleteUser);
+  const sendEmployeeDeadlineReminders = useStore(s => s.sendEmployeeDeadlineReminders);
 
   const [activeTab, setActiveTab] = useState<'users' | 'categories' | 'statuses'>('users');
   const [inviteEmail, setInviteEmail] = useState('');
@@ -23,6 +26,7 @@ export const AdminSettings: React.FC = () => {
   const [newCategoryColor, setNewCategoryColor] = useState('#818cf8');
   const [newStatus, setNewStatus] = useState('');
   const [newStatusColor, setNewStatusColor] = useState('#818cf8');
+  const [sendingReminderUserId, setSendingReminderUserId] = useState<string | null>(null);
 
   // Modal State
   const [confirmModal, setConfirmModal] = useState<{
@@ -66,6 +70,23 @@ export const AdminSettings: React.FC = () => {
     if (!inviteEmail.trim() || !inviteEmail.includes('@')) return;
     await inviteUser(inviteEmail.trim());
     setInviteEmail('');
+  };
+
+  const getRemindableTaskCount = (userId: string) => {
+    const now = Date.now();
+    return tasks.filter(task => (
+      task.assignee_id === userId &&
+      task.status !== 'Done' &&
+      !task.is_self_task &&
+      !!task.end_date &&
+      new Date(task.end_date).getTime() > now
+    )).length;
+  };
+
+  const handleSendEmployeeReminder = async (userId: string) => {
+    setSendingReminderUserId(userId);
+    await sendEmployeeDeadlineReminders(userId);
+    setSendingReminderUserId(null);
   };
 
   return (
@@ -141,6 +162,7 @@ export const AdminSettings: React.FC = () => {
                   <th>Email</th>
                   <th>Job Title (Label)</th>
                   <th>Role</th>
+                  <th>Reminder</th>
                   <th style={{ width: '40px' }}></th>
                 </tr>
               </thead>
@@ -184,18 +206,51 @@ export const AdminSettings: React.FC = () => {
                       />
                     </td>
                     <td>
-                      <select 
+                      <AppSelect
                         value={user.role}
-                        onChange={(e) => updateUserRole(user.id, e.target.value as any)}
+                        onChange={(value) => updateUserRole(user.id, value as any)}
                         disabled={user.id === currentUser.id}
+                        options={ROLES.map(role => ({ value: role, label: role }))}
                         style={{ 
-                          padding: '0.4rem 0.8rem', width: '130px',
-                          borderRadius: 'var(--radius-sm)', fontSize: '0.82rem',
-                          fontWeight: 600
+                          width: '130px'
                         }}
-                      >
-                        {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
-                      </select>
+                      />
+                    </td>
+                    <td>
+                      {(() => {
+                        const taskCount = getRemindableTaskCount(user.id);
+                        const isSending = sendingReminderUserId === user.id;
+
+                        return (
+                          <button
+                            className="secondary-action-btn"
+                            onClick={() => handleSendEmployeeReminder(user.id)}
+                            disabled={isSending || taskCount === 0 || !user.email}
+                            title={
+                              taskCount === 0
+                                ? 'No active assigned tasks with future deadlines'
+                                : `Email ${taskCount} deadline reminder${taskCount === 1 ? '' : 's'}`
+                            }
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.4rem',
+                              padding: '0.45rem 0.7rem',
+                              borderRadius: 'var(--radius-sm)',
+                              border: '1px solid var(--border)',
+                              background: taskCount > 0 ? 'var(--primary-light)' : 'var(--surface-2)',
+                              color: taskCount > 0 ? 'var(--primary)' : 'var(--text-4)',
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              cursor: isSending || taskCount === 0 || !user.email ? 'not-allowed' : 'pointer',
+                              opacity: isSending || taskCount === 0 || !user.email ? 0.55 : 1
+                            }}
+                          >
+                            <Send size={13} />
+                            {isSending ? 'Sending...' : `Remind ${taskCount}`}
+                          </button>
+                        );
+                      })()}
                     </td>
                     <td>
                       {user.id !== currentUser.id && (

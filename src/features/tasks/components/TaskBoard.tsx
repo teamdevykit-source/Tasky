@@ -3,6 +3,7 @@ import { useStore } from '../../../store/useStore';
 import { TaskCard } from './TaskCard';
 import { Search, Filter, ArrowUpDown, Clock, User as UserIcon, Tag, LayoutGrid, ListChecks, Lock, AlertTriangle, AlertCircle, Plus } from 'lucide-react';
 import { formatDateTime } from '../../../lib/format';
+import { AppSelect } from '../../../components/Shared/AppSelect';
 
 export const TaskBoard: React.FC<{ 
   onSelectTask: (id: string | null) => void,
@@ -119,46 +120,71 @@ export const TaskBoard: React.FC<{
       <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
         <div className="filter-select-group">
           <Filter size={13} style={{ opacity: 0.4 }} />
-          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="clean-select">
-            <option value="All">All Statuses</option>
-            {statuses.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-          </select>
+          <AppSelect
+            value={filterStatus}
+            onChange={setFilterStatus}
+            options={[
+              { value: 'All', label: 'All Statuses' },
+              ...statuses.map(s => ({ value: s.name, label: s.name, color: s.color }))
+            ]}
+            compact
+          />
         </div>
 
         <div className="filter-select-group">
           <Tag size={13} style={{ opacity: 0.4 }} />
-          <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="clean-select">
-            <option value="All">All Categories</option>
-            {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-          </select>
+          <AppSelect
+            value={filterCategory}
+            onChange={setFilterCategory}
+            options={[
+              { value: 'All', label: 'All Categories' },
+              ...categories.map(c => ({ value: c.name, label: c.name, color: c.color }))
+            ]}
+            compact
+          />
         </div>
 
         {currentUser.role === 'Admin' && (
           <div className="filter-select-group">
             <UserIcon size={13} style={{ opacity: 0.4 }} />
-            <select value={filterAssignee} onChange={e => setFilterAssignee(e.target.value)} className="clean-select">
-              <option value="All">All Assignees</option>
-              {profiles.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
-            </select>
+            <AppSelect
+              value={filterAssignee}
+              onChange={setFilterAssignee}
+              options={[
+                { value: 'All', label: 'All Assignees' },
+                ...profiles.map(p => ({ value: p.id, label: p.full_name }))
+              ]}
+              compact
+            />
           </div>
         )}
 
         <div className="filter-select-group">
           <Lock size={13} style={{ opacity: 0.4 }} />
-          <select value={filterSelfTasks} onChange={e => setFilterSelfTasks(e.target.value as any)} className="clean-select">
-            <option value="all">All Tasks</option>
-            <option value="only">Self Tasks Only</option>
-            <option value="hide">Team Tasks Only</option>
-          </select>
+          <AppSelect
+            value={filterSelfTasks}
+            onChange={value => setFilterSelfTasks(value as 'all' | 'only' | 'hide')}
+            options={[
+              { value: 'all', label: 'All Tasks' },
+              { value: 'only', label: 'Self Tasks Only' },
+              { value: 'hide', label: 'Team Tasks Only' }
+            ]}
+            compact
+          />
         </div>
 
         <div className="filter-select-group" style={{ background: 'var(--surface-3)', borderColor: 'transparent' }}>
           <ArrowUpDown size={13} style={{ color: 'var(--primary)' }} />
-          <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} className="clean-select">
-            <option value="date">Sort by Date</option>
-            <option value="name">Sort by Name</option>
-            <option value="status">Sort by Status</option>
-          </select>
+          <AppSelect
+            value={sortBy}
+            onChange={value => setSortBy(value as 'name' | 'date' | 'status')}
+            options={[
+              { value: 'date', label: 'Sort by Date' },
+              { value: 'name', label: 'Sort by Name' },
+              { value: 'status', label: 'Sort by Status' }
+            ]}
+            compact
+          />
         </div>
 
         {(activeFilterCount > 0 || filterSelfTasks !== 'all' || searchQuery !== '') && (
@@ -329,20 +355,17 @@ export const TaskBoard: React.FC<{
                           {task.status}
                         </div>
                       ) : (
-                        <select 
-                          className="task-status-select"
-                          value={task.status}
-                          onClick={e => e.stopPropagation()}
-                          onChange={(e) => updateTaskStatus(task.id, e.target.value)}
-                          style={{ 
-                            padding: '0.45rem 0.8rem', width: '150px', fontWeight: 600, 
-                            borderRadius: 'var(--radius-sm)', color: statColor, 
-                            borderColor: `${statColor}30`, background: 'var(--surface)',
-                            fontSize: '0.8rem'
-                          }}
-                        >
-                          {statuses.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-                        </select>
+                        <div onClick={e => e.stopPropagation()}>
+                          <AppSelect
+                            value={task.status}
+                            onChange={(value) => updateTaskStatus(task.id, value)}
+                            options={statuses.map(s => ({ value: s.name, label: s.name, color: s.color }))}
+                            accentColor={statColor}
+                            style={{ 
+                              width: '150px'
+                            }}
+                          />
+                        </div>
                       )}
                     </td>
                   </tr>

@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../../../store/useStore';
-import { Clock, Calendar, Sparkles, CheckCircle2, X, ChevronDown, ChevronUp, Users, Lock, Repeat, RotateCcw } from 'lucide-react';
+import { Calendar, Sparkles, CheckCircle2, X, ChevronDown, ChevronUp, Users, Lock, Repeat, RotateCcw } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { RecurrenceType } from '../../../lib/supabase';
+import { AppDateTimePicker } from '../../../components/Shared/AppDateTimePicker';
+import { AppSelect } from '../../../components/Shared/AppSelect';
 
 const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DAYS_OF_WEEK_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -416,20 +418,15 @@ export const CreateTaskModal: React.FC<{ onClose: () => void, forceSelfTask?: bo
                           position: 'absolute', left: '0.75rem', top: '50%',
                           transform: 'translateY(-50%)', color: '#34d399', pointerEvents: 'none'
                         }} />
-                        <select
-                          value={recurrenceDay}
-                          onChange={e => setRecurrenceDay(Number(e.target.value))}
-                          style={{
-                            ...inputStyle, paddingLeft: '2.25rem', fontSize: '0.82rem',
-                            appearance: 'auto'
-                          }}
-                        >
-                          {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
-                            <option key={d} value={d}>
-                              {d}{d === 1 ? 'st' : d === 2 ? 'nd' : d === 3 ? 'rd' : 'th'}
-                            </option>
-                          ))}
-                        </select>
+                        <AppSelect
+                          value={String(recurrenceDay)}
+                          onChange={value => setRecurrenceDay(Number(value))}
+                          options={Array.from({ length: 31 }, (_, i) => i + 1).map(d => ({
+                            value: String(d),
+                            label: `${d}${d === 1 ? 'st' : d === 2 ? 'nd' : d === 3 ? 'rd' : 'th'}`
+                          }))}
+                          fullWidth
+                        />
                       </div>
                     </div>
                   )}
@@ -437,18 +434,14 @@ export const CreateTaskModal: React.FC<{ onClose: () => void, forceSelfTask?: bo
                   {/* Time Picker */}
                   <div>
                     <label style={{ ...labelStyle, fontSize: '0.68rem' }}>At Time</label>
-                    <div style={{ position: 'relative' }}>
-                      <Clock size={13} style={{
-                        position: 'absolute', left: '0.75rem', top: '50%',
-                        transform: 'translateY(-50%)', color: '#34d399', pointerEvents: 'none'
-                      }} />
-                      <input
-                        type="time"
-                        value={recurrenceTime}
-                        onChange={e => setRecurrenceTime(e.target.value)}
-                        style={{ ...inputStyle, paddingLeft: '2.25rem', fontSize: '0.82rem' }}
-                      />
-                    </div>
+                    <AppDateTimePicker
+                      value={recurrenceTime}
+                      onChange={setRecurrenceTime}
+                      includeDate={false}
+                      includeTime
+                      placeholder="Select time"
+                      compact
+                    />
                   </div>
 
                   {/* Summary Badge */}
@@ -642,17 +635,19 @@ export const CreateTaskModal: React.FC<{ onClose: () => void, forceSelfTask?: bo
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               <div>
                 <label style={{ ...labelStyle, fontSize: '0.68rem' }}>Start Date</label>
-                <div style={{ position: 'relative' }}>
-                  <Clock size={13} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-4)', pointerEvents: 'none' }} />
-                  <input type="datetime-local" value={startDate} onChange={e => setStartDate(e.target.value)} style={{ ...inputStyle, paddingLeft: '2.25rem', fontSize: '0.82rem' }} />
-                </div>
+                <AppDateTimePicker
+                  value={startDate}
+                  onChange={setStartDate}
+                  placeholder="Select start date"
+                />
               </div>
               <div>
                 <label style={{ ...labelStyle, fontSize: '0.68rem' }}>End Date</label>
-                <div style={{ position: 'relative' }}>
-                  <Calendar size={13} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-4)', pointerEvents: 'none' }} />
-                  <input type="datetime-local" value={endDate} onChange={e => setEndDate(e.target.value)} style={{ ...inputStyle, paddingLeft: '2.25rem', fontSize: '0.82rem' }} />
-                </div>
+                <AppDateTimePicker
+                  value={endDate}
+                  onChange={setEndDate}
+                  placeholder="Select end date"
+                />
               </div>
             </div>
           </div>

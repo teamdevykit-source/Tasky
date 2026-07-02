@@ -3,6 +3,7 @@ import type { Task } from '../../../lib/supabase';
 import { useStore } from '../../../store/useStore';
 import { Calendar, Eye, GripVertical, Lock, AlertTriangle, AlertCircle, Repeat } from 'lucide-react';
 import { formatDateTime } from '../../../lib/format';
+import { AppSelect } from '../../../components/Shared/AppSelect';
 
 export const TaskCard: React.FC<{ task: Task, onClick: () => void }> = ({ task, onClick }) => {
   const currentUser = useStore(s => s.currentUser);
@@ -26,7 +27,6 @@ export const TaskCard: React.FC<{ task: Task, onClick: () => void }> = ({ task, 
 
   const currentStatus = statuses.find(s => s.name === task.status);
   const statusColor = currentStatus?.color || '#94a3b8';
-  const statusNames = statuses.map(s => s.name);
   const categoryColor = categories.find(c => c.name === task.category)?.color || '#64748b';
 
   const isOverdue = React.useMemo(() => {
@@ -173,20 +173,18 @@ export const TaskCard: React.FC<{ task: Task, onClick: () => void }> = ({ task, 
               {task.status}
             </span>
           ) : (
-            <select 
+            <div onClick={e => e.stopPropagation()}>
+              <AppSelect
               value={task.status}
-              onClick={e => e.stopPropagation()}
-              onChange={(e) => updateTaskStatus(task.id, e.target.value)}
+              onChange={(value) => updateTaskStatus(task.id, value)}
+              options={statuses.map(s => ({ value: s.name, label: s.name, color: s.color }))}
+              accentColor={statusColor}
+              compact
               style={{ 
-                fontSize: '0.68rem', border: `1px solid ${statusColor}30`, 
-                background: 'var(--surface-2)', padding: '0.2rem 1.25rem 0.2rem 0.4rem', 
-                height: '22px', color: statusColor, fontWeight: 700,
-                borderRadius: 'var(--radius-sm)',
-                cursor: 'pointer'
+                width: '128px'
               }}
-            >
-              {statusNames.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
+            />
+            </div>
           )}
         </div>
       </div>

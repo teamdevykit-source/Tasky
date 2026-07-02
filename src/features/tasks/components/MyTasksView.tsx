@@ -3,6 +3,7 @@ import { useStore } from '../../../store/useStore';
 import { TaskCard } from './TaskCard';
 import { Search, ArrowUpDown, Lock, Plus, ListChecks, LayoutGrid } from 'lucide-react';
 import { CreateTaskModal } from './CreateTaskModal';
+import { AppSelect } from '../../../components/Shared/AppSelect';
 
 export const MyTasksView: React.FC<{ onSelectTask: (id: string | null) => void }> = ({ onSelectTask }) => {
   const currentUser = useStore(s => s.currentUser);
@@ -116,11 +117,16 @@ export const MyTasksView: React.FC<{ onSelectTask: (id: string | null) => void }
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           <div className="filter-select-group">
             <ArrowUpDown size={13} style={{ opacity: 0.4 }} />
-            <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} className="clean-select">
-              <option value="date">Sort by Date</option>
-              <option value="name">Sort by Name</option>
-              <option value="status">Sort by Status</option>
-            </select>
+            <AppSelect
+              value={sortBy}
+              onChange={value => setSortBy(value as 'name' | 'date' | 'status')}
+              options={[
+                { value: 'date', label: 'Sort by Date' },
+                { value: 'name', label: 'Sort by Name' },
+                { value: 'status', label: 'Sort by Status' }
+              ]}
+              compact
+            />
           </div>
 
           <div style={{ display: 'flex', padding: '0.2rem', background: 'var(--surface-3)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
