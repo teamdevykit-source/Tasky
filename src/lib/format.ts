@@ -24,6 +24,22 @@ export const formatDateTime = (dateStr?: string) => {
   return new Intl.DateTimeFormat('en-US', options).format(date);
 };
 
+export const formatTime12Hour = (time?: string | null) => {
+  if (!time) return 'TBD';
+
+  const [rawHour, rawMinute] = time.split(':').map(Number);
+  if (!Number.isFinite(rawHour) || !Number.isFinite(rawMinute)) return time;
+
+  const date = new Date();
+  date.setHours(rawHour, rawMinute, 0, 0);
+
+  return new Intl.DateTimeFormat('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  }).format(date);
+};
+
 /**
  * Formats a date for datetime-local input (YYYY-MM-DDTHH:mm)
  */

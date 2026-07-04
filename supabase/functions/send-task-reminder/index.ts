@@ -107,12 +107,10 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: 'Task not found.' }, 404);
   }
 
-  if (!task.assignee_id) {
-    return jsonResponse({ error: 'Task has no assignee.' }, 400);
-  }
+  const recipientId = task.is_self_task ? task.creator_id : task.assignee_id;
 
-  if (!task.end_date) {
-    return jsonResponse({ error: 'Task has no deadline.' }, 400);
+  if (!recipientId) {
+    return jsonResponse({ error: 'Task has no reminder recipient.' }, 400);
   }
 
   const isAdmin = requesterRole?.role === 'Admin';
@@ -123,28 +121,29 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: 'You do not have permission to send this reminder.' }, 403);
   }
 
-  const { data: assignee } = await supabase
+  const { data: recipient } = await supabase
     .from('profiles')
     .select('id, email, full_name')
-    .eq('id', task.assignee_id)
+    .eq('id', recipientId)
     .maybeSingle();
 
-  if (!assignee?.email) {
-    return jsonResponse({ error: 'Assignee does not have an email address.' }, 400);
+  if (!recipient?.email) {
+    return jsonResponse({ error: 'Recipient does not have an email address.' }, 400);
   }
 
   const deadline = formatDate(task.end_date);
-  const subject = `Task reminder: ${task.title}`;
-  const assigneeName = escapeHtml(assignee.full_name || 'there');
+  const subject = task.is_self_task ? `Private task reminder: ${task.title}` : `Task reminder: ${task.title}`;
+  const recipientName = escapeHtml(recipient.full_name || 'there');
   const taskTitle = escapeHtml(task.title);
   const taskStatus = escapeHtml(task.status);
   const taskCategory = escapeHtml(task.category || 'General');
   const taskDescription = escapeHtml(task.description || 'No additional details.');
+  const assignmentLabel = task.is_self_task ? 'private task' : 'assigned task';
   const appLink = escapeHtml(appUrl);
   const text = [
-    `Hello ${assignee.full_name || 'there'},`,
+    `Hello ${recipient.full_name || 'there'},`,
     '',
-    'This is a reminder for your assigned task:',
+    `This is a reminder for your ${assignmentLabel}:`,
     '',
     `Task: ${task.title}`,
     `Deadline: ${deadline}`,
@@ -162,8 +161,8 @@ Deno.serve(async (req) => {
   const html = `
     <div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.6;">
       <h2 style="margin-bottom: 8px;">Task reminder</h2>
-      <p>Hello ${assigneeName},</p>
-      <p>This is a reminder for your assigned task:</p>
+      <p>Hello ${recipientName},</p>
+      <p>This is a reminder for your ${assignmentLabel}:</p>
       <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin: 16px 0;">
         <p><strong>Task:</strong> ${taskTitle}</p>
         <p><strong>Deadline:</strong> ${deadline}</p>
@@ -184,7 +183,7 @@ Deno.serve(async (req) => {
     },
     body: JSON.stringify({
       from: mailFrom,
-      to: assignee.email,
+      to: recipient.email,
       subject,
       text,
       html
@@ -204,7 +203,7 @@ Deno.serve(async (req) => {
     success: true,
     provider: 'resend',
     task_id: task.id,
-    recipient: assignee.email,
+    recipient: recipient.email,
     message_id: resendBody.id
   });
 });

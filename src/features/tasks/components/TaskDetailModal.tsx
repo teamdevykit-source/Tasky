@@ -3,19 +3,33 @@ import { useStore } from '../../../store/useStore';
 import { X, Clock, Trash2, CheckCircle2, AlignLeft, Eye, Lock, Repeat, Mail } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { formatDateTime } from '../../../lib/format';
+import { formatDateTime, formatTime12Hour } from '../../../lib/format';
+import { computeNextRecurrence } from '../../../lib/recurrence';
+import type { RecurrenceType, Task } from '../../../lib/supabase';
+import { AppDateTimePicker } from '../../../components/Shared/AppDateTimePicker';
 import { AppSelect } from '../../../components/Shared/AppSelect';
+
+const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+const normalizeRecurrenceTime = (time?: string | null) => (time || '09:00').slice(0, 5);
+
+const getEditableDay = (type: RecurrenceType, currentDay?: number | null) => {
+  if (type === 'daily') return null;
+  if (type === 'weekly') return currentDay ?? 1;
+  return Math.min(Math.max(currentDay || 1, 1), 31);
+};
 
 export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> = ({ taskId, onClose }) => {
   const [isConfirmingDelete, setIsConfirmingDelete] = React.useState(false);
   const tasks = useStore(s => s.tasks);
   const profiles = useStore(s => s.profiles);
-  const categories = useStore(s => s.categories);
   const statuses = useStore(s => s.statuses);
   const currentUser = useStore(s => s.currentUser);
   const updateTaskStatus = useStore(s => s.updateTaskStatus);
+  const updateTask = useStore(s => s.updateTask);
   const deleteTask = useStore(s => s.deleteTask);
   const sendTaskReminderEmail = useStore(s => s.sendTaskReminderEmail);
+  const setAlertData = useStore(s => s.setAlertData);
   
   const task = tasks.find(t => t.id === taskId);
   
@@ -35,7 +49,6 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
     ? (currentUser.id === task.creator_id)
     : (currentUser.role === 'Admin' || currentUser.id === task.creator_id);
 
-  const catColor = categories.find(c => c.name === task.category)?.color || '#64748b';
   const statColor = statuses.find(s => s.name === task.status)?.color || '#64748b';
 
   const handleDelete = () => {
@@ -52,14 +65,38 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
     }
   };
 
+  const updateRecurringSchedule = async (
+    recurringTask: Task,
+    updates: { type?: RecurrenceType; time?: string; day?: number | null }
+  ) => {
+    const recurrenceType = updates.type || recurringTask.recurrence_type || 'daily';
+    const recurrenceTime = updates.time || normalizeRecurrenceTime(recurringTask.recurrence_time);
+    const recurrenceDay = updates.day !== undefined
+      ? updates.day
+      : getEditableDay(recurrenceType, recurringTask.recurrence_day);
+
+    await updateTask(recurringTask.id, {
+      recurrence_type: recurrenceType,
+      recurrence_time: recurrenceTime,
+      recurrence_day: recurrenceType === 'daily' ? null : recurrenceDay,
+      next_recurrence_at: computeNextRecurrence(
+        recurrenceType,
+        recurrenceTime,
+        recurrenceType === 'daily' ? null : recurrenceDay
+      )
+    });
+    setAlertData({ message: 'Recurring schedule updated.', type: 'success' });
+  };
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '850px', width: '95%', padding: 0 }}>
         
-        {/* Header with gradient */}
+        {/* Header */}
         <div style={{ 
-          background: `linear-gradient(135deg, ${statColor}cc, ${catColor}99)`, 
-          padding: '2.25rem 2.5rem', color: 'white', position: 'relative',
+          background: 'var(--surface-2)',
+          borderBottom: `3px solid ${statColor}`,
+          padding: '2.25rem 2.5rem', color: 'var(--text-1)', position: 'relative',
           overflow: 'hidden'
         }}>
           {/* Decorative circles */}
@@ -71,28 +108,29 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
           </button>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
             <div style={{ 
-              background: 'rgba(255,255,255,0.15)', padding: '0.25rem 0.7rem', 
+              background: 'var(--surface)', padding: '0.25rem 0.7rem', 
               borderRadius: 'var(--radius-full)', fontSize: '0.7rem', fontWeight: 700, 
               textTransform: 'uppercase', letterSpacing: '0.05em',
-              backdropFilter: 'blur(4px)'
+              border: '1px solid var(--border)'
             }}>
               {task.status}
             </div>
             {task.category && (
               <div style={{ 
-                background: 'rgba(255,255,255,0.08)', padding: '0.25rem 0.7rem', 
+                background: 'var(--surface)', padding: '0.25rem 0.7rem', 
                 borderRadius: 'var(--radius-full)', fontSize: '0.7rem', fontWeight: 600, 
-                textTransform: 'uppercase', letterSpacing: '0.05em' 
+                textTransform: 'uppercase', letterSpacing: '0.05em',
+                border: '1px solid var(--border)'
               }}>
                 {task.category}
               </div>
             )}
             {task.is_self_task && (
               <div style={{ 
-                background: 'rgba(255,255,255,0.2)', padding: '0.25rem 0.7rem', 
+                background: 'var(--primary-light)', padding: '0.25rem 0.7rem', 
                 borderRadius: 'var(--radius-full)', fontSize: '0.7rem', fontWeight: 700, 
                 textTransform: 'uppercase', letterSpacing: '0.08em', display: 'flex', alignItems: 'center', gap: '0.35rem',
-                border: '1px solid rgba(255,255,255,0.3)'
+                border: '1px solid var(--border)'
               }}>
                 <Lock size={12} /> Self Task
               </div>
@@ -274,30 +312,100 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
                   border: '1px solid rgba(52,211,153,0.15)', padding: '0.8rem',
                   display: 'flex', flexDirection: 'column', gap: '0.5rem'
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <span style={{ fontSize: '0.7rem', color: 'var(--text-4)', fontWeight: 600, width: '58px' }}>Freq:</span>
-                    <span style={{ fontSize: '0.82rem', color: '#34d399', fontWeight: 700, textTransform: 'capitalize' }}>{task.recurrence_type}</span>
-                  </div>
-                  {task.recurrence_type === 'weekly' && task.recurrence_day != null && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <span style={{ fontSize: '0.7rem', color: 'var(--text-4)', fontWeight: 600, width: '58px' }}>Day:</span>
-                      <span style={{ fontSize: '0.82rem', color: 'var(--text-1)', fontWeight: 600 }}>
-                        {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][task.recurrence_day]}
-                      </span>
-                    </div>
+                  {canEdit ? (
+                    <>
+                      <AppSelect
+                        value={task.recurrence_type}
+                        onChange={value => updateRecurringSchedule(task, {
+                          type: value as RecurrenceType,
+                          day: getEditableDay(value as RecurrenceType, task.recurrence_day)
+                        })}
+                        options={[
+                          { value: 'daily', label: 'Daily' },
+                          { value: 'weekly', label: 'Weekly' },
+                          { value: 'monthly', label: 'Monthly' }
+                        ]}
+                        compact
+                        fullWidth
+                      />
+
+                      {task.recurrence_type === 'weekly' && (
+                        <AppSelect
+                          value={String(task.recurrence_day ?? 1)}
+                          onChange={value => updateRecurringSchedule(task, { day: Number(value) })}
+                          options={daysOfWeek.map((day, index) => ({ value: String(index), label: day }))}
+                          compact
+                          fullWidth
+                        />
+                      )}
+
+                      {task.recurrence_type === 'monthly' && (
+                        <AppSelect
+                          value={String(task.recurrence_day || 1)}
+                          onChange={value => updateRecurringSchedule(task, { day: Number(value) })}
+                          options={Array.from({ length: 31 }, (_, index) => {
+                            const day = index + 1;
+                            return { value: String(day), label: `Day ${day}` };
+                          })}
+                          compact
+                          fullWidth
+                        />
+                      )}
+
+                      <div style={{
+                        display: 'grid',
+                        gap: '0.4rem',
+                        padding: '0.65rem',
+                        background: 'rgba(52,211,153,0.05)',
+                        border: '1px solid rgba(52,211,153,0.14)',
+                        borderRadius: 'var(--radius-md)'
+                      }}>
+                        <span style={{ fontSize: '0.66rem', color: 'var(--text-4)', fontWeight: 800, textTransform: 'uppercase' }}>Time</span>
+                        <AppDateTimePicker
+                          value={normalizeRecurrenceTime(task.recurrence_time)}
+                          onChange={value => updateRecurringSchedule(task, { time: value })}
+                          includeDate={false}
+                          includeTime
+                          placeholder="Select time"
+                          compact
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-4)', fontWeight: 600, width: '58px' }}>Freq:</span>
+                        <span style={{ fontSize: '0.82rem', color: '#34d399', fontWeight: 700, textTransform: 'capitalize' }}>{task.recurrence_type}</span>
+                      </div>
+                      {task.recurrence_type === 'weekly' && task.recurrence_day != null && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-4)', fontWeight: 600, width: '58px' }}>Day:</span>
+                          <span style={{ fontSize: '0.82rem', color: 'var(--text-1)', fontWeight: 600 }}>
+                            {daysOfWeek[task.recurrence_day]}
+                          </span>
+                        </div>
+                      )}
+                      {task.recurrence_type === 'monthly' && task.recurrence_day != null && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-4)', fontWeight: 600, width: '58px' }}>Day:</span>
+                          <span style={{ fontSize: '0.82rem', color: 'var(--text-1)', fontWeight: 600 }}>
+                            Day {task.recurrence_day}
+                          </span>
+                        </div>
+                      )}
+                      {task.recurrence_time && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-4)', fontWeight: 600, width: '58px' }}>Time:</span>
+                          <span style={{ fontSize: '0.82rem', color: 'var(--text-1)', fontWeight: 600 }}>{formatTime12Hour(task.recurrence_time)}</span>
+                        </div>
+                      )}
+                    </>
                   )}
-                  {task.recurrence_type === 'monthly' && task.recurrence_day != null && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <span style={{ fontSize: '0.7rem', color: 'var(--text-4)', fontWeight: 600, width: '58px' }}>Day:</span>
-                      <span style={{ fontSize: '0.82rem', color: 'var(--text-1)', fontWeight: 600 }}>
-                        {task.recurrence_day}{task.recurrence_day === 1 ? 'st' : task.recurrence_day === 2 ? 'nd' : task.recurrence_day === 3 ? 'rd' : 'th'} of month
-                      </span>
-                    </div>
-                  )}
-                  {task.recurrence_time && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <span style={{ fontSize: '0.7rem', color: 'var(--text-4)', fontWeight: 600, width: '58px' }}>Time:</span>
-                      <span style={{ fontSize: '0.82rem', color: 'var(--text-1)', fontWeight: 600 }}>{task.recurrence_time}</span>
+
+                  {task.next_recurrence_at && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', paddingTop: '0.25rem' }}>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-4)', fontWeight: 600, width: '58px' }}>Next:</span>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-1)', fontWeight: 600 }}>{formatDateTime(task.next_recurrence_at)}</span>
                     </div>
                   )}
                 </div>

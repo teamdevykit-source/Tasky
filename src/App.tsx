@@ -5,6 +5,7 @@ import { CreateTaskModal } from './features/tasks/components/CreateTaskModal';
 import { TaskDetailModal } from './features/tasks/components/TaskDetailModal';
 import { DashboardAnalytics } from './features/dashboard/components/DashboardAnalytics';
 import { MyTasksView } from './features/tasks/components/MyTasksView';
+import { RecurringTasksView } from './features/tasks/components/RecurringTasksView';
 import { ProfileSettings } from './features/profile/components/ProfileSettings';
 import { Auth } from './features/auth/components/Auth';
 import { AdminSettings } from './features/admin/components/AdminSettings';
@@ -22,6 +23,7 @@ function App() {
   const initialize = useStore(s => s.initialize);
   const checkTaskDeadlines = useStore(s => s.checkTaskDeadlines);
   const viewMode = useStore(s => s.viewMode);
+  const setViewMode = useStore(s => s.setViewMode);
   const isCheckingSession = useStore(s => s.isCheckingSession);
   const isInvitedSession = useStore(s => s.isInvitedSession);
 
@@ -41,6 +43,12 @@ function App() {
     return () => clearInterval(interval);
   }, [initialize, checkTaskDeadlines]);
 
+  useEffect(() => {
+    if (currentUser && currentUser.role !== 'Admin' && viewMode === 'recurring') {
+      setViewMode('dashboard');
+    }
+  }, [currentUser, viewMode, setViewMode]);
+
   if (isCheckingSession) {
     return (
       <div style={{ 
@@ -50,7 +58,7 @@ function App() {
         <div style={{ textAlign: 'center' }}>
           <div style={{ 
             width: '44px', height: '44px', 
-            background: 'linear-gradient(135deg, var(--primary-dark), var(--primary))', 
+            background: 'var(--primary)', 
             borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center',
             margin: '0 auto 1.5rem', fontWeight: 800, fontSize: '1.1rem', color: 'white',
             boxShadow: '0 8px 25px rgba(99,102,241,0.3)'
@@ -97,6 +105,8 @@ function App() {
           <DashboardAnalytics onOpenCreateModal={() => setIsCreateModalOpen(true)} />
         ) : viewMode === 'my-tasks' ? (
           <MyTasksView onSelectTask={setSelectedTaskId} />
+        ) : viewMode === 'recurring' && currentUser.role === 'Admin' ? (
+          <RecurringTasksView onSelectTask={setSelectedTaskId} />
         ) : viewMode === 'profile' ? (
           <ProfileSettings />
         ) : viewMode === 'reminders' ? (

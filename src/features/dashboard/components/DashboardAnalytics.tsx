@@ -81,7 +81,7 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
   };
 
   return (
-    <div className="animate-fadeIn">
+    <div className="animate-fadeIn dashboard-page">
       <header style={{ marginBottom: '2rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -103,7 +103,7 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
         </div>
 
         {/* Dynamic Welcome Message */}
-        <button onClick={() => setViewMode('profile')} style={{
+        <button className="dashboard-welcome" onClick={() => setViewMode('profile')} style={{
           padding: '1rem 1.25rem', borderRadius: 'var(--radius-md)',
           background: currentUser.role === 'Admin' ? 'rgba(99, 102, 241, 0.08)' : 'rgba(52, 211, 153, 0.08)',
           border: `1px solid ${currentUser.role === 'Admin' ? 'rgba(99, 102, 241, 0.15)' : 'rgba(52, 211, 153, 0.15)'}`,
@@ -171,7 +171,7 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '1.5rem' }}>
         
         {/* Status Breakdown */}
-        <div style={{ 
+        <div className="dashboard-panel" style={{ 
           background: 'var(--surface)', borderRadius: 'var(--radius-xl)', 
           padding: '1.5rem', border: '1px solid var(--border)',
           boxShadow: 'var(--shadow-sm)'
@@ -185,6 +185,7 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
               const percentage = stats.total > 0 ? Math.round((s.count / stats.total) * 100) : 0;
               return (
                 <button
+                  className="dashboard-progress-row"
                   key={s.id}
                   onClick={() => openTaskBoard(s.name === 'Unmapped' ? {} : { status: s.name })}
                   style={{
@@ -210,7 +211,7 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
         </div>
 
         {/* Categories Breakdown */}
-        <div style={{ 
+        <div className="dashboard-panel" style={{ 
           background: 'var(--surface)', borderRadius: 'var(--radius-xl)', 
           padding: '1.5rem', border: '1px solid var(--border)',
           boxShadow: 'var(--shadow-sm)'
@@ -223,7 +224,7 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
             {stats.byCategory.sort((a,b) => b.count - a.count).map(c => {
               if (c.count === 0) return null;
               return (
-                <button key={c.id} onClick={() => openTaskBoard({ category: c.name })} style={{ 
+                <button className="dashboard-category-card" key={c.id} onClick={() => openTaskBoard({ category: c.name })} style={{ 
                   display: 'flex', alignItems: 'center', gap: '0.6rem',
                   background: 'var(--surface-2)', padding: '0.75rem 1rem', 
                   borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)',
@@ -259,7 +260,7 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
 
         {/* Admin-only Team Analytics */}
         {currentUser.role === 'Admin' && (
-          <div style={{ 
+          <div className="dashboard-panel" style={{ 
             background: 'var(--surface)', borderRadius: 'var(--radius-xl)', 
             padding: '1.5rem', border: '1px solid var(--border)',
             boxShadow: 'var(--shadow-sm)'
@@ -270,7 +271,7 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               {/* Admins Group */}
-              <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+              <div className="dashboard-role-group" style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
                 <button 
                   onClick={() => setExpandedRole(expandedRole === 'Admin' ? null : 'Admin')}
                   style={{ 
@@ -327,7 +328,7 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
               </div>
 
               {/* Workers Group */}
-              <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+              <div className="dashboard-role-group" style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
                 <button 
                   onClick={() => setExpandedRole(expandedRole === 'Worker' ? null : 'Worker')}
                   style={{ 
@@ -403,13 +404,13 @@ const MetricCard = ({
   bg: string,
   onClick: () => void
 }) => (
-  <button onClick={onClick} style={{ 
+  <button className="metric-card" onClick={onClick} style={{ 
     background: 'var(--surface)', padding: '1.5rem', borderRadius: 'var(--radius-xl)',
     border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)',
     display: 'flex', alignItems: 'center', gap: '1.25rem',
     cursor: 'pointer', textAlign: 'left', width: '100%'
   }}>
-    <div style={{ 
+    <div className="metric-card-icon" style={{ 
       width: '48px', height: '48px', borderRadius: 'var(--radius-full)', background: bg,
       display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
     }}>

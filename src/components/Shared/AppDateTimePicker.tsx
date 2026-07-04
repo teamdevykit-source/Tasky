@@ -59,12 +59,13 @@ const displayLabel = (value: string, includeDate: boolean, includeTime: boolean,
 export const AppDateTimePicker: React.FC<AppDateTimePickerProps> = ({
   value,
   onChange,
-  placeholder = 'Select date',
+  placeholder,
   includeDate = true,
   includeTime = true,
   compact = false
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const resolvedPlaceholder = placeholder || (includeDate ? 'Select date' : 'Select time');
   const parsed = parseValue(value);
   const initialDate = parsed || new Date();
   const [draft, setDraft] = useState<Date>(initialDate);
@@ -171,17 +172,47 @@ export const AppDateTimePicker: React.FC<AppDateTimePickerProps> = ({
     });
   }, [viewDate]);
 
-  const hourOptions = Array.from({ length: 24 }, (_, hour) => ({
-    value: pad(hour),
-    label: pad(hour)
-  }));
-
-  const minuteOptions = Array.from({ length: 60 }, (_, minute) => {
+  const hourOptions = Array.from({ length: 12 }, (_, index) => {
+    const hour = index + 1;
     return {
-      value: pad(minute),
-      label: pad(minute)
+      value: String(hour),
+      label: String(hour)
     };
   });
+
+  const periodOptions = [
+    { value: 'AM', label: 'AM' },
+    { value: 'PM', label: 'PM' }
+  ];
+
+  const displayHour = draft.getHours() % 12 || 12;
+  const displayPeriod = draft.getHours() >= 12 ? 'PM' : 'AM';
+
+  const to24Hour = (hour12: number, period: string) => {
+    if (period === 'AM') return hour12 === 12 ? 0 : hour12;
+    return hour12 === 12 ? 12 : hour12 + 12;
+  };
+
+  const updatePeriod = (period: string) => {
+    const next = new Date(draft);
+    next.setHours(to24Hour(displayHour, period));
+    next.setSeconds(0, 0);
+    setDraft(next);
+    onChange(includeDate ? toDateTimeValue(next) : toTimeValue(next));
+  };
+
+  const updateHour = (hour: string) => {
+    const next = new Date(draft);
+    next.setHours(to24Hour(Number(hour), displayPeriod));
+    next.setSeconds(0, 0);
+    setDraft(next);
+    onChange(includeDate ? toDateTimeValue(next) : toTimeValue(next));
+  };
+
+  const minuteOptions = Array.from({ length: 60 }, (_, minute) => ({
+    value: pad(minute),
+    label: pad(minute)
+  }));
 
   const applyValue = (nextDraft = draft) => {
     onChange(includeDate ? toDateTimeValue(nextDraft) : toTimeValue(nextDraft));
@@ -215,7 +246,7 @@ export const AppDateTimePicker: React.FC<AppDateTimePickerProps> = ({
     setIsOpen(false);
   };
 
-  const label = displayLabel(value, includeDate, includeTime, placeholder);
+  const label = displayLabel(value, includeDate, includeTime, resolvedPlaceholder);
 
   return (
     <div
@@ -291,8 +322,8 @@ export const AppDateTimePicker: React.FC<AppDateTimePickerProps> = ({
             <div className="app-time-row">
               <Clock size={14} />
               <AppSelect
-                value={pad(draft.getHours())}
-                onChange={nextValue => updateTime('hour', nextValue)}
+                value={String(displayHour)}
+                onChange={updateHour}
                 options={hourOptions}
                 compact
               />
@@ -301,6 +332,12 @@ export const AppDateTimePicker: React.FC<AppDateTimePickerProps> = ({
                 value={pad(draft.getMinutes())}
                 onChange={nextValue => updateTime('minute', nextValue)}
                 options={minuteOptions}
+                compact
+              />
+              <AppSelect
+                value={displayPeriod}
+                onChange={updatePeriod}
+                options={periodOptions}
                 compact
               />
             </div>

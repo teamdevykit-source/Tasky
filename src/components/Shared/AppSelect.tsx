@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Check, ChevronDown } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Check, ChevronDown, Search } from 'lucide-react';
 
 export interface AppSelectOption {
   value: string;
@@ -18,6 +18,8 @@ interface AppSelectProps {
   compact?: boolean;
   fullWidth?: boolean;
   accentColor?: string;
+  searchable?: boolean;
+  searchPlaceholder?: string;
   className?: string;
   style?: React.CSSProperties;
 }
@@ -32,13 +34,26 @@ export const AppSelect: React.FC<AppSelectProps> = ({
   compact = false,
   fullWidth = false,
   accentColor,
+  searchable = false,
+  searchPlaceholder = 'Search...',
   className,
   style
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const selected = options.find(option => option.value === value);
   const displayColor = selected?.color || accentColor;
+  const filteredOptions = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return options;
+
+    return options.filter(option => (
+      option.label.toLowerCase().includes(query) ||
+      option.value.toLowerCase().includes(query)
+    ));
+  }, [options, searchQuery]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -62,10 +77,22 @@ export const AppSelect: React.FC<AppSelectProps> = ({
     };
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen) {
+      setSearchQuery('');
+      return;
+    }
+
+    if (searchable) {
+      window.requestAnimationFrame(() => searchInputRef.current?.focus());
+    }
+  }, [isOpen, searchable]);
+
   const handleSelect = (option: AppSelectOption) => {
     if (option.disabled) return;
     onChange(option.value);
     setIsOpen(false);
+    setSearchQuery('');
   };
 
   return (
@@ -91,7 +118,19 @@ export const AppSelect: React.FC<AppSelectProps> = ({
 
       {isOpen && (
         <div className="app-select-menu">
-          {options.map(option => (
+          {searchable && (
+            <div className="app-select-search">
+              <Search size={13} />
+              <input
+                ref={searchInputRef}
+                value={searchQuery}
+                onChange={event => setSearchQuery(event.target.value)}
+                placeholder={searchPlaceholder}
+                onClick={event => event.stopPropagation()}
+              />
+            </div>
+          )}
+          {filteredOptions.map(option => (
             <button
               type="button"
               key={option.value}
@@ -109,6 +148,9 @@ export const AppSelect: React.FC<AppSelectProps> = ({
               {option.value === value && <Check size={14} className="app-select-check" />}
             </button>
           ))}
+          {filteredOptions.length === 0 && (
+            <div className="app-select-empty">No matches</div>
+          )}
         </div>
       )}
     </div>

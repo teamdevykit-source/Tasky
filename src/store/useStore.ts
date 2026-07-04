@@ -49,8 +49,8 @@ interface StoreState {
   adminSettingsTab: AdminSettingsTab;
 
   setAlertData: (data: { message: string, type: 'error' | 'success' } | null) => void;
-  viewMode: 'dashboard' | 'kanban' | 'scrum' | 'settings' | 'my-tasks' | 'profile' | 'reminders';
-  setViewMode: (mode: 'dashboard' | 'kanban' | 'scrum' | 'settings' | 'my-tasks' | 'profile' | 'reminders') => void;
+  viewMode: 'dashboard' | 'kanban' | 'scrum' | 'settings' | 'my-tasks' | 'profile' | 'reminders' | 'recurring';
+  setViewMode: (mode: 'dashboard' | 'kanban' | 'scrum' | 'settings' | 'my-tasks' | 'profile' | 'reminders' | 'recurring') => void;
   setDashboardTaskFilters: (filters: DashboardTaskFilters | null) => void;
   setAdminSettingsTab: (tab: AdminSettingsTab) => void;
   updatePassword: (password: string) => Promise<void>;
@@ -100,7 +100,7 @@ applyTheme(getInitialTheme());
 const getInitialViewMode = (): StoreState['viewMode'] => {
   try {
     const saved = localStorage.getItem('elmeraki-view');
-    if (saved && ['dashboard', 'kanban', 'scrum', 'settings', 'my-tasks', 'profile', 'reminders'].includes(saved)) {
+    if (saved && ['dashboard', 'kanban', 'scrum', 'settings', 'my-tasks', 'profile', 'reminders', 'recurring'].includes(saved)) {
       return saved as StoreState['viewMode'];
     }
   } catch { }
@@ -228,7 +228,7 @@ export const useStore = create<StoreState>((set, get) => ({
           template.recurrence_type,
           template.recurrence_time,
           template.recurrence_type === 'daily' ? null : template.recurrence_day,
-          occurrenceAt
+          now
         ).toISOString();
 
         const { data: claimedTemplate, error: claimError } = await supabase
@@ -264,6 +264,29 @@ export const useStore = create<StoreState>((set, get) => ({
             createdTask
           ]
         }));
+
+        try {
+          const { error: reminderError } = await supabase.functions.invoke('send-task-reminder', {
+            body: { task_id: createdTask.id }
+          });
+
+          if (reminderError) throw reminderError;
+
+          get().setAlertData({
+            message: `Recurring task "${createdTask.title}" is back to ${defaultStatus}. Reminder email sent.`,
+            type: 'success'
+          });
+        } catch (err: any) {
+          const message = await getReminderEmailErrorMessage(err);
+          console.warn('Recurring task email reminder failed:', err);
+          const isResendTestingLimit = message.includes('You can only send testing emails');
+          get().setAlertData({
+            message: isResendTestingLimit
+              ? 'Recurring task was created, but Resend is in testing mode. Verify a domain or send only to your Resend account email.'
+              : `Recurring task was created, but email failed: ${message}`,
+            type: 'error'
+          });
+        }
       }
     } finally {
       _isProcessingRecurringTasks = false;
@@ -611,20 +634,17 @@ export const useStore = create<StoreState>((set, get) => ({
 
   sendTaskReminderEmail: async (taskId) => {
     const task = get().tasks.find(t => t.id === taskId);
-    const assignee = task ? get().profiles.find(p => p.id === task.assignee_id) : null;
+    const recipient = task
+      ? get().profiles.find(p => p.id === (task.is_self_task ? task.creator_id : task.assignee_id))
+      : null;
 
     if (!task) {
       get().setAlertData({ message: 'Task not found.', type: 'error' });
       return false;
     }
 
-    if (!assignee?.email) {
-      get().setAlertData({ message: 'This task does not have an assignee email.', type: 'error' });
-      return false;
-    }
-
-    if (!task.end_date) {
-      get().setAlertData({ message: 'This task does not have a deadline to remind about.', type: 'error' });
+    if (!recipient?.email) {
+      get().setAlertData({ message: 'This task does not have a recipient email.', type: 'error' });
       return false;
     }
 
@@ -636,7 +656,7 @@ export const useStore = create<StoreState>((set, get) => ({
       if (error) throw error;
 
       get().setAlertData({
-        message: `Reminder email sent to ${assignee.full_name}.`,
+        message: `Reminder email sent to ${recipient.full_name}.`,
         type: 'success'
       });
       return true;

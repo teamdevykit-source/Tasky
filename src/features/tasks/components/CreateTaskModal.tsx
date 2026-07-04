@@ -269,9 +269,7 @@ export const CreateTaskModal: React.FC<{ onClose: () => void, forceSelfTask?: bo
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                   <div style={{
                     width: '32px', height: '32px', borderRadius: '50%',
-                    background: isRecurring
-                      ? 'linear-gradient(135deg, #34d399, #10b981)'
-                      : 'var(--border-strong)',
+                    background: isRecurring ? '#10b981' : 'var(--border-strong)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     color: 'white', transition: 'var(--transition)',
                     boxShadow: isRecurring ? '0 4px 12px rgba(52,211,153,0.3)' : 'none'
@@ -288,9 +286,7 @@ export const CreateTaskModal: React.FC<{ onClose: () => void, forceSelfTask?: bo
                   onClick={() => setIsRecurring(!isRecurring)}
                   style={{
                     width: '44px', height: '24px', borderRadius: 'var(--radius-full)',
-                    background: isRecurring
-                      ? 'linear-gradient(135deg, #34d399, #10b981)'
-                      : 'var(--border-strong)',
+                    background: isRecurring ? '#10b981' : 'var(--border-strong)',
                     position: 'relative', border: 'none', cursor: 'pointer', transition: '0.3s'
                   }}
                 >
@@ -514,7 +510,7 @@ export const CreateTaskModal: React.FC<{ onClose: () => void, forceSelfTask?: bo
               <button type="submit" disabled={isSubmitting}
                 style={{
                   flex: 2, padding: '0.8rem', borderRadius: 'var(--radius-md)',
-                  background: `linear-gradient(135deg, ${selectedCategoryColor}, ${selectedCategoryColor}cc)`,
+                  background: selectedCategoryColor,
                   color: 'white', fontWeight: 600, border: 'none', cursor: 'pointer',
                   fontSize: '0.9rem', opacity: isSubmitting ? 0.6 : 1,
                   transition: 'var(--transition)',

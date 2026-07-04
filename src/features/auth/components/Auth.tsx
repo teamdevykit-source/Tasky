@@ -77,12 +77,12 @@ export const Auth = () => {
             <ShieldCheck size={14} /> EL MERAKI ENTERPRISE
           </div>
           <h1 className="brand-tagline">
-            Next-Generation <br />
+            Workspace <br />
             <span className="text-gradient">Operational Control</span>
           </h1>
           <p className="brand-description">
-            Streamline your organization's workflow with real-time task synchronization,
-            advanced observability, and enterprise-grade security.
+            Manage internal work with clear ownership, reliable reminders,
+            and real-time task visibility.
           </p>
 
           <div className="feature-list">
@@ -235,10 +235,7 @@ export const Auth = () => {
             flex-direction: column;
             justify-content: space-between;
             position: relative;
-            background:
-              radial-gradient(circle at 18% 18%, rgba(63, 109, 246, 0.18), transparent 18rem),
-              radial-gradient(circle at 72% 64%, rgba(127, 79, 234, 0.12), transparent 22rem),
-              linear-gradient(145deg, #0a0718 0%, #100c22 52%, #151129 100%);
+            background: var(--surface-2);
             overflow: hidden;
         }
 
@@ -246,9 +243,7 @@ export const Auth = () => {
             content: '';
             position: absolute;
             inset: 0;
-            background:
-              linear-gradient(rgba(210,218,255,0.05) 1px, transparent 1px),
-              linear-gradient(90deg, rgba(210,218,255,0.05) 1px, transparent 1px);
+            background: none;
             background-size: 44px 44px;
             opacity: 0.18;
         }
@@ -289,9 +284,7 @@ export const Auth = () => {
         }
 
         .text-gradient {
-            background: linear-gradient(135deg, #2e86ee, #4b46d8 54%, #7f4fea);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+            color: var(--primary);
         }
 
         .brand-description {
@@ -370,7 +363,7 @@ export const Auth = () => {
         .auth-logo {
             width: 44px;
             height: 44px;
-            background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+            background: var(--primary);
             color: white;
             display: flex;
             align-items: center;
@@ -452,7 +445,7 @@ export const Auth = () => {
         .auth-submit-btn {
             width: 100%;
             padding: 0.85rem;
-            background: linear-gradient(135deg, #3f6df6 0%, #4b46d8 72%);
+            background: var(--primary);
             color: white;
             border: none;
             border-radius: var(--radius-md);

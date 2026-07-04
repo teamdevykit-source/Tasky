@@ -1,6 +1,6 @@
 import React from 'react';
 import { useStore } from '../../store/useStore';
-import { KanbanSquare, List, Settings, LogOut, Zap, Sun, Moon, X, LayoutDashboard, Lock, Bell } from 'lucide-react';
+import { KanbanSquare, List, Settings, LogOut, Zap, Sun, Moon, X, LayoutDashboard, Lock, Bell, Repeat } from 'lucide-react';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -133,6 +133,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
               </div>
             )}
           </button>
+
+          {currentUser.role === 'Admin' && (
+            <button
+              className={`nav-item ${viewMode === 'recurring' ? 'active' : ''}`}
+              onClick={() => setViewMode('recurring')}
+            >
+              <Repeat size={17} />
+              <span>Recurring Tasks</span>
+            </button>
+          )}
 
           <button 
             className={`nav-item ${viewMode === 'kanban' ? 'active' : ''}`}
