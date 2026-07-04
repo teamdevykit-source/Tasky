@@ -3,6 +3,14 @@ import { supabase } from '../lib/supabase';
 import type { Profile, Task, Category, Status } from '../lib/supabase';
 
 type Theme = 'light' | 'dark';
+type AdminSettingsTab = 'users' | 'categories' | 'statuses';
+
+export interface DashboardTaskFilters {
+  status?: string;
+  category?: string;
+  assignee?: string;
+  selfTasks?: 'all' | 'only' | 'hide';
+}
 
 const getReminderEmailErrorMessage = async (err: any) => {
   const message = err?.message || 'Failed to send reminder email.';
@@ -36,10 +44,14 @@ interface StoreState {
   theme: Theme;
   alertData: { message: string, type: 'error' | 'success' } | null;
   reminders: { id: string, taskId: string, message: string, type: 'warning' | 'urgent' | 'overdue' }[];
+  dashboardTaskFilters: DashboardTaskFilters | null;
+  adminSettingsTab: AdminSettingsTab;
 
   setAlertData: (data: { message: string, type: 'error' | 'success' } | null) => void;
   viewMode: 'dashboard' | 'kanban' | 'scrum' | 'settings' | 'my-tasks' | 'profile' | 'reminders';
   setViewMode: (mode: 'dashboard' | 'kanban' | 'scrum' | 'settings' | 'my-tasks' | 'profile' | 'reminders') => void;
+  setDashboardTaskFilters: (filters: DashboardTaskFilters | null) => void;
+  setAdminSettingsTab: (tab: AdminSettingsTab) => void;
   updatePassword: (password: string) => Promise<void>;
   updateProfile: (updates: { full_name?: string, job_title?: string }) => Promise<void>;
   setTheme: (theme: Theme) => void;
@@ -108,8 +120,12 @@ export const useStore = create<StoreState>((set, get) => ({
   theme: getInitialTheme(),
   alertData: null,
   reminders: [],
+  dashboardTaskFilters: null,
+  adminSettingsTab: 'users',
 
   setAlertData: (data) => set({ alertData: data }),
+  setDashboardTaskFilters: (filters) => set({ dashboardTaskFilters: filters }),
+  setAdminSettingsTab: (tab) => set({ adminSettingsTab: tab }),
   
   dismissReminder: (id) => set(s => ({ 
     reminders: s.reminders.filter(r => r.id !== id) 

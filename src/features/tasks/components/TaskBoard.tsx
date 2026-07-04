@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useStore } from '../../../store/useStore';
 import { TaskCard } from './TaskCard';
 import { Search, Filter, ArrowUpDown, Clock, User as UserIcon, Tag, LayoutGrid, ListChecks, Lock, AlertTriangle, AlertCircle, Plus } from 'lucide-react';
@@ -16,6 +16,8 @@ export const TaskBoard: React.FC<{
   const statuses = useStore(s => s.statuses);
   const categories = useStore(s => s.categories);
   const tasks = useStore(s => s.tasks);
+  const dashboardTaskFilters = useStore(s => s.dashboardTaskFilters);
+  const setDashboardTaskFilters = useStore(s => s.setDashboardTaskFilters);
   
   // Compute visible tasks based on role
   const visibleTasks = useMemo(() => {
@@ -41,13 +43,25 @@ export const TaskBoard: React.FC<{
   const [filterSelfTasks, setFilterSelfTasks] = useState<'all' | 'only' | 'hide'>('all');
   const [sortBy, setSortBy] = useState<'name' | 'date' | 'status'>('date');
 
+  useEffect(() => {
+    if (!dashboardTaskFilters) return;
+
+    setFilterStatus(dashboardTaskFilters.status || 'All');
+    setFilterCategory(dashboardTaskFilters.category || 'All');
+    setFilterAssignee(dashboardTaskFilters.assignee || 'All');
+    setFilterSelfTasks(dashboardTaskFilters.selfTasks || 'all');
+    setSearchQuery('');
+    setDashboardTaskFilters(null);
+  }, [dashboardTaskFilters, setDashboardTaskFilters]);
+
   const filteredTasks = useMemo(() => {
     let result = visibleTasks.filter(t => {
       const matchesSearch = t.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
                             (t.description?.toLowerCase().includes(searchQuery.toLowerCase()));
       const matchesStatus = filterStatus === 'All' || t.status === filterStatus;
       const matchesCategory = filterCategory === 'All' || t.category === filterCategory;
-      const matchesAssignee = filterAssignee === 'All' || t.assignee_id === filterAssignee;
+      const matchesAssignee = filterAssignee === 'All' ||
+        (filterAssignee === 'unassigned' ? !t.assignee_id : t.assignee_id === filterAssignee);
       const matchesSelf = 
         filterSelfTasks === 'all' ? true :
         filterSelfTasks === 'only' ? t.is_self_task === true :
@@ -61,7 +75,7 @@ export const TaskBoard: React.FC<{
     if (sortBy === 'status') result.sort((a, b) => a.status.localeCompare(b.status));
 
     return result;
-  }, [visibleTasks, searchQuery, filterStatus, filterCategory, filterAssignee, sortBy]);
+  }, [visibleTasks, searchQuery, filterStatus, filterCategory, filterAssignee, filterSelfTasks, sortBy]);
 
   if (!currentUser) return null;
 
@@ -152,6 +166,7 @@ export const TaskBoard: React.FC<{
               onChange={setFilterAssignee}
               options={[
                 { value: 'All', label: 'All Assignees' },
+                { value: 'unassigned', label: 'Unassigned' },
                 ...profiles.map(p => ({ value: p.id, label: p.full_name }))
               ]}
               compact

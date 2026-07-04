@@ -9,6 +9,9 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
   const currentUser = useStore(s => s.currentUser);
   const statuses = useStore(s => s.statuses);
   const categories = useStore(s => s.categories);
+  const setViewMode = useStore(s => s.setViewMode);
+  const setDashboardTaskFilters = useStore(s => s.setDashboardTaskFilters);
+  const setAdminSettingsTab = useStore(s => s.setAdminSettingsTab);
 
   const getDashboardTasks = useStore(s => s.getDashboardTasks);
   const visibleTasks = useMemo(() => getDashboardTasks(), [getDashboardTasks, tasks]);
@@ -67,6 +70,16 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
 
   if (!currentUser) return null;
 
+  const openTaskBoard = (filters: { status?: string; category?: string; assignee?: string } = {}) => {
+    setDashboardTaskFilters({ selfTasks: 'hide', ...filters });
+    setViewMode('kanban');
+  };
+
+  const openSettings = (tab: 'users' | 'categories' | 'statuses') => {
+    setAdminSettingsTab(tab);
+    setViewMode('settings');
+  };
+
   return (
     <div className="animate-fadeIn">
       <header style={{ marginBottom: '2rem' }}>
@@ -90,11 +103,12 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
         </div>
 
         {/* Dynamic Welcome Message */}
-        <div style={{
+        <button onClick={() => setViewMode('profile')} style={{
           padding: '1rem 1.25rem', borderRadius: 'var(--radius-md)',
           background: currentUser.role === 'Admin' ? 'rgba(99, 102, 241, 0.08)' : 'rgba(52, 211, 153, 0.08)',
           border: `1px solid ${currentUser.role === 'Admin' ? 'rgba(99, 102, 241, 0.15)' : 'rgba(52, 211, 153, 0.15)'}`,
-          display: 'flex', alignItems: 'center', gap: '0.75rem'
+          display: 'flex', alignItems: 'center', gap: '0.75rem',
+          width: '100%', cursor: 'pointer', textAlign: 'left'
         }}>
           <div style={{ fontSize: '1.2rem' }}>👋</div>
           <div>
@@ -107,7 +121,7 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
                 : `You are involved as a ${currentUser.job_title || 'Worker'} in this project. You can view and manage tasks related to you.`}
             </p>
           </div>
-        </div>
+        </button>
       </header>
 
       {/* Top Metrics Cards */}
@@ -120,24 +134,28 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
           title="Total Tasks" 
           value={stats.total} 
           bg="rgba(129,140,248,0.1)"
+          onClick={() => openTaskBoard()}
         />
         <MetricCard 
           icon={<Users size={20} color="#34d399" />} 
           title="My Tasks" 
           value={stats.myTasks} 
           bg="rgba(52,211,153,0.1)"
+          onClick={() => openTaskBoard({ assignee: currentUser.id })}
         />
         <MetricCard 
           icon={<Activity size={20} color="#fbbf24" />} 
           title="Categories In Use" 
           value={categories.filter(c => stats.byCategory.find(bc => bc.name === c.name && bc.count > 0)).length} 
           bg="rgba(251,191,36,0.1)"
+          onClick={() => currentUser.role === 'Admin' ? openSettings('categories') : openTaskBoard()}
         />
         <MetricCard 
           icon={<Clock size={20} color="#f87171" />} 
           title="Unassigned" 
           value={stats.unassigned} 
           bg="rgba(248,113,113,0.1)"
+          onClick={() => openTaskBoard({ assignee: 'unassigned' })}
         />
         {currentUser.role === 'Admin' && (
           <MetricCard 
@@ -145,6 +163,7 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
             title="Total Users" 
             value={stats.totalUsers} 
             bg="rgba(192,132,252,0.1)"
+            onClick={() => openSettings('users')}
           />
         )}
       </div>
@@ -165,7 +184,18 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
             {stats.byStatus.map(s => {
               const percentage = stats.total > 0 ? Math.round((s.count / stats.total) * 100) : 0;
               return (
-                <div key={s.id}>
+                <button
+                  key={s.id}
+                  onClick={() => openTaskBoard(s.name === 'Unmapped' ? {} : { status: s.name })}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    padding: 0,
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    width: '100%'
+                  }}
+                >
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem', fontSize: '0.85rem' }}>
                     <span style={{ fontWeight: 500, color: 'var(--text-2)' }}>{s.name}</span>
                     <span style={{ color: 'var(--text-4)', fontWeight: 600 }}>{s.count} ({percentage}%)</span>
@@ -173,7 +203,7 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
                   <div style={{ width: '100%', height: '8px', background: 'var(--surface-3)', borderRadius: 'var(--radius-full)', overflow: 'hidden' }}>
                     <div style={{ width: `${percentage}%`, height: '100%', background: s.color || 'var(--primary)', transition: 'width 1s ease-out' }} />
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -193,24 +223,36 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
             {stats.byCategory.sort((a,b) => b.count - a.count).map(c => {
               if (c.count === 0) return null;
               return (
-                <div key={c.id} style={{ 
+                <button key={c.id} onClick={() => openTaskBoard({ category: c.name })} style={{ 
                   display: 'flex', alignItems: 'center', gap: '0.6rem',
                   background: 'var(--surface-2)', padding: '0.75rem 1rem', 
                   borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)',
-                  flex: '1 1 calc(50% - 0.75rem)'
+                  flex: '1 1 calc(50% - 0.75rem)', cursor: 'pointer', textAlign: 'left'
                 }}>
                   <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: c.color || 'var(--primary)' }} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-1)' }}>{c.name}</div>
                     <div style={{ fontSize: '0.7rem', color: 'var(--text-4)' }}>{c.count} tasks</div>
                   </div>
-                </div>
+                </button>
               );
             })}
             {stats.byCategory.every(c => c.count === 0) && (
-              <div style={{ color: 'var(--text-4)', fontSize: '0.85rem', fontStyle: 'italic', padding: '1rem' }}>
+              <button
+                onClick={() => currentUser.role === 'Admin' ? openSettings('categories') : openTaskBoard()}
+                style={{
+                  color: 'var(--text-4)',
+                  fontSize: '0.85rem',
+                  fontStyle: 'italic',
+                  padding: '1rem',
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  textAlign: 'left'
+                }}
+              >
                 No category data available yet.
-              </div>
+              </button>
             )}
           </div>
         </div>
@@ -247,14 +289,34 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
                 {expandedRole === 'Admin' && (
                   <div style={{ background: 'var(--surface)', padding: '0.5rem', borderTop: '1px solid var(--border)' }}>
                     {profiles.filter(p => p.role === 'Admin').map(p => (
-                      <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border-subtle)' }}>
+                      <div
+                        key={p.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => openTaskBoard({ assignee: p.id })}
+                        onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && openTaskBoard({ assignee: p.id })}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.75rem',
+                          padding: '0.5rem 0.75rem',
+                          borderBottom: '1px solid var(--border-subtle)',
+                          borderTop: 'none',
+                          borderLeft: 'none',
+                          borderRight: 'none',
+                          background: 'transparent',
+                          cursor: 'pointer',
+                          width: '100%',
+                          textAlign: 'left'
+                        }}
+                      >
                         <div className="avatar" style={{ width: '24px', height: '24px', fontSize: '0.6rem' }}>{p.full_name.charAt(0).toUpperCase()}</div>
                         <div style={{ flex: 1 }}>
                           <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-1)' }}>{p.full_name}</div>
                           <div style={{ fontSize: '0.65rem', color: 'var(--text-4)' }}>{p.email}</div>
                         </div>
                         {p.email && (
-                          <a href={`mailto:${p.email}`} title={`Email ${p.full_name}`} style={{ color: 'var(--text-4)', opacity: 0.5 }}>
+                          <a href={`mailto:${p.email}`} onClick={e => e.stopPropagation()} title={`Email ${p.full_name}`} style={{ color: 'var(--text-4)', opacity: 0.5 }}>
                             <Mail size={12} />
                           </a>
                         )}
@@ -284,14 +346,34 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
                 {expandedRole === 'Worker' && (
                   <div style={{ background: 'var(--surface)', padding: '0.5rem', borderTop: '1px solid var(--border)' }}>
                     {profiles.filter(p => p.role === 'Worker').map(p => (
-                      <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem 0.75rem', borderBottom: '1px solid var(--border-subtle)' }}>
+                      <div
+                        key={p.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => openTaskBoard({ assignee: p.id })}
+                        onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && openTaskBoard({ assignee: p.id })}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.75rem',
+                          padding: '0.5rem 0.75rem',
+                          borderBottom: '1px solid var(--border-subtle)',
+                          borderTop: 'none',
+                          borderLeft: 'none',
+                          borderRight: 'none',
+                          background: 'transparent',
+                          cursor: 'pointer',
+                          width: '100%',
+                          textAlign: 'left'
+                        }}
+                      >
                         <div className="avatar" style={{ width: '24px', height: '24px', fontSize: '0.6rem' }}>{p.full_name.charAt(0).toUpperCase()}</div>
                         <div style={{ flex: 1 }}>
                           <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-1)' }}>{p.full_name}</div>
                           <div style={{ fontSize: '0.65rem', color: 'var(--text-4)' }}>{p.email}</div>
                         </div>
                         {p.email && (
-                          <a href={`mailto:${p.email}`} title={`Email ${p.full_name}`} style={{ color: 'var(--text-4)', opacity: 0.5 }}>
+                          <a href={`mailto:${p.email}`} onClick={e => e.stopPropagation()} title={`Email ${p.full_name}`} style={{ color: 'var(--text-4)', opacity: 0.5 }}>
                             <Mail size={12} />
                           </a>
                         )}
@@ -308,11 +390,24 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
   );
 };
 
-const MetricCard = ({ icon, title, value, bg }: { icon: React.ReactNode, title: string, value: number, bg: string }) => (
-  <div style={{ 
+const MetricCard = ({
+  icon,
+  title,
+  value,
+  bg,
+  onClick
+}: {
+  icon: React.ReactNode,
+  title: string,
+  value: number,
+  bg: string,
+  onClick: () => void
+}) => (
+  <button onClick={onClick} style={{ 
     background: 'var(--surface)', padding: '1.5rem', borderRadius: 'var(--radius-xl)',
     border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)',
-    display: 'flex', alignItems: 'center', gap: '1.25rem'
+    display: 'flex', alignItems: 'center', gap: '1.25rem',
+    cursor: 'pointer', textAlign: 'left', width: '100%'
   }}>
     <div style={{ 
       width: '48px', height: '48px', borderRadius: 'var(--radius-full)', background: bg,
@@ -328,5 +423,5 @@ const MetricCard = ({ icon, title, value, bg }: { icon: React.ReactNode, title: 
         {value}
       </div>
     </div>
-  </div>
+  </button>
 );

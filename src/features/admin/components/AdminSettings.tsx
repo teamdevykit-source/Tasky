@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useStore } from '../../../store/useStore';
 import { Plus, Trash2, Settings, Users, Layers, Tag, ShieldCheck, Mail, Send } from 'lucide-react';
 import { ConfirmationModal } from '../../../components/Shared/ConfirmationModal';
@@ -19,14 +19,19 @@ export const AdminSettings: React.FC = () => {
   const inviteUser = useStore(s => s.inviteUser);
   const deleteUser = useStore(s => s.deleteUser);
   const sendEmployeeDeadlineReminders = useStore(s => s.sendEmployeeDeadlineReminders);
+  const adminSettingsTab = useStore(s => s.adminSettingsTab);
 
-  const [activeTab, setActiveTab] = useState<'users' | 'categories' | 'statuses'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'categories' | 'statuses'>(adminSettingsTab);
   const [inviteEmail, setInviteEmail] = useState('');
   const [newCategory, setNewCategory] = useState('');
   const [newCategoryColor, setNewCategoryColor] = useState('#818cf8');
   const [newStatus, setNewStatus] = useState('');
   const [newStatusColor, setNewStatusColor] = useState('#818cf8');
   const [sendingReminderUserId, setSendingReminderUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setActiveTab(adminSettingsTab);
+  }, [adminSettingsTab]);
 
   // Modal State
   const [confirmModal, setConfirmModal] = useState<{
