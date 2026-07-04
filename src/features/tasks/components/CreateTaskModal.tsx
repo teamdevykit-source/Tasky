@@ -4,43 +4,12 @@ import { Calendar, Sparkles, CheckCircle2, X, ChevronDown, ChevronUp, Users, Loc
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { RecurrenceType } from '../../../lib/supabase';
+import { computeNextRecurrence } from '../../../lib/recurrence';
 import { AppDateTimePicker } from '../../../components/Shared/AppDateTimePicker';
 import { AppSelect } from '../../../components/Shared/AppSelect';
 
 const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DAYS_OF_WEEK_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-
-/**
- * Compute the next occurrence timestamp based on recurrence settings.
- */
-function computeNextRecurrence(
-  type: RecurrenceType,
-  time: string,
-  day: number | null
-): string {
-  const [hh, mm] = time.split(':').map(Number);
-  const now = new Date();
-  let next = new Date();
-
-  if (type === 'daily') {
-    next.setHours(hh, mm, 0, 0);
-    if (next <= now) next.setDate(next.getDate() + 1);
-  } else if (type === 'weekly') {
-    const targetDay = day ?? 1; // default Monday
-    next.setHours(hh, mm, 0, 0);
-    let diff = targetDay - now.getDay();
-    if (diff < 0 || (diff === 0 && next <= now)) diff += 7;
-    next.setDate(next.getDate() + diff);
-  } else if (type === 'monthly') {
-    const targetDate = day ?? 1;
-    next = new Date(now.getFullYear(), now.getMonth(), targetDate, hh, mm, 0, 0);
-    if (next <= now) {
-      next.setMonth(next.getMonth() + 1);
-    }
-  }
-
-  return next.toISOString();
-}
 
 export const CreateTaskModal: React.FC<{ onClose: () => void, forceSelfTask?: boolean }> = ({ onClose, forceSelfTask }) => {
   const addTask = useStore(s => s.addTask);

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import type { Profile, Task, Category, Status } from '../lib/supabase';
+import { buildRecurringTaskOccurrence, computeNextRecurrenceAfter } from '../lib/recurrence';
 
 type Theme = 'light' | 'dark';
 type AdminSettingsTab = 'users' | 'categories' | 'statuses';
@@ -75,6 +76,7 @@ interface StoreState {
   deleteTask: (id: string) => Promise<void>;
   dismissReminder: (reminderId: string) => void;
   checkTaskDeadlines: () => void;
+  processDueRecurringTasks: () => Promise<void>;
   logout: () => Promise<void>;
   getDashboardTasks: () => Task[];
 }
@@ -107,6 +109,7 @@ const getInitialViewMode = (): StoreState['viewMode'] => {
 
 // Guard against multiple initializations
 let _initialized = false;
+let _isProcessingRecurringTasks = false;
 
 export const useStore = create<StoreState>((set, get) => ({
   currentUser: null,
@@ -197,6 +200,73 @@ export const useStore = create<StoreState>((set, get) => ({
 
     if (newReminders.length > 0) {
       set(s => ({ reminders: [...s.reminders, ...newReminders] }));
+    }
+  },
+  processDueRecurringTasks: async () => {
+    if (_isProcessingRecurringTasks) return;
+    _isProcessingRecurringTasks = true;
+
+    try {
+      const { tasks, statuses } = get();
+      const now = new Date();
+      const defaultStatus = statuses[0]?.name || 'To Do';
+      const dueTemplates = tasks.filter(task => (
+        task.is_recurring &&
+        !task.parent_task_id &&
+        task.recurrence_type &&
+        task.next_recurrence_at &&
+        new Date(task.next_recurrence_at).getTime() <= now.getTime()
+      ));
+
+      for (const template of dueTemplates) {
+        if (!template.recurrence_type || !template.next_recurrence_at) continue;
+
+        const occurrenceAt = new Date(template.next_recurrence_at);
+        if (Number.isNaN(occurrenceAt.getTime())) continue;
+
+        const nextRecurrence = computeNextRecurrenceAfter(
+          template.recurrence_type,
+          template.recurrence_time,
+          template.recurrence_type === 'daily' ? null : template.recurrence_day,
+          occurrenceAt
+        ).toISOString();
+
+        const { data: claimedTemplate, error: claimError } = await supabase
+          .from('tasks')
+          .update({ next_recurrence_at: nextRecurrence })
+          .eq('id', template.id)
+          .eq('next_recurrence_at', template.next_recurrence_at)
+          .select()
+          .maybeSingle();
+
+        if (claimError || !claimedTemplate) continue;
+
+        const occurrence = buildRecurringTaskOccurrence(template, occurrenceAt, defaultStatus);
+        const { data: createdTask, error: insertError } = await supabase
+          .from('tasks')
+          .insert([occurrence])
+          .select()
+          .single();
+
+        if (insertError) {
+          await supabase
+            .from('tasks')
+            .update({ next_recurrence_at: template.next_recurrence_at })
+            .eq('id', template.id);
+          continue;
+        }
+
+        set((state) => ({
+          tasks: [
+            ...state.tasks
+              .map(task => task.id === template.id ? { ...task, next_recurrence_at: nextRecurrence } : task)
+              .filter(task => task.id !== createdTask.id),
+            createdTask
+          ]
+        }));
+      }
+    } finally {
+      _isProcessingRecurringTasks = false;
     }
   },
   viewMode: getInitialViewMode(),
@@ -323,6 +393,7 @@ export const useStore = create<StoreState>((set, get) => ({
 
         set({ isLoaded: true });
         get().checkTaskDeadlines();
+        get().processDueRecurringTasks();
         if (isSilent) {
           // If silent, just update parts of state if needed, but usually initialize has set them already
         }
@@ -369,6 +440,7 @@ export const useStore = create<StoreState>((set, get) => ({
     setInterval(() => {
       get().refreshData?.();
       get().checkTaskDeadlines?.();
+      get().processDueRecurringTasks?.();
     }, 20000); 
 
     // Realtime subscriptions (non-blocking)
@@ -408,6 +480,7 @@ export const useStore = create<StoreState>((set, get) => ({
             return state;
           });
           get().checkTaskDeadlines();
+          get().processDueRecurringTasks();
         })
         .subscribe();
 
