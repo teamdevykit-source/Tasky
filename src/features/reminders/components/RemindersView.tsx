@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useStore } from '../../../store/useStore';
 import { Bell, AlertTriangle, Clock, Calendar, ChevronRight, CheckCircle2, ListTodo, XCircle, Search, Filter, X, Users, Mail, Zap } from 'lucide-react';
 import { formatDateTime } from '../../../lib/format';
+import { getTaskAssigneeIds, isTaskAssignee } from '../../../lib/supabase';
 
 export const RemindersView: React.FC<{ 
   onSelectTask: (id: string) => void,
@@ -32,7 +33,7 @@ export const RemindersView: React.FC<{
     const matchesSearch = task.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
                           (task.description || '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = activeCategory ? task.category === activeCategory : true;
-    const matchesAssignee = activeAssigneeId ? task.assignee_id === activeAssigneeId : true;
+    const matchesAssignee = activeAssigneeId ? isTaskAssignee(task, activeAssigneeId) : true;
     return matchesSearch && matchesCategory && matchesAssignee;
   };
 
@@ -52,13 +53,13 @@ export const RemindersView: React.FC<{
   const getTaskInfo = (taskId: string) => {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return null;
-    const assignee = profiles.find(p => p.id === task.assignee_id);
-    return { task, assignee };
+    const assignees = profiles.filter(profile => getTaskAssigneeIds(task).includes(profile.id));
+    return { task, assignees };
   };
 
-  const handleEmailReminder = async (task: any, assignee: any) => {
-    if (!assignee?.email) {
-      alert("This user doesn't have an email address associated with their profile.");
+  const handleEmailReminder = async (task: any, assignees: any[]) => {
+    if (!assignees.some(assignee => assignee.email)) {
+      alert("This task's assignees don't have email addresses associated with their profiles.");
       return;
     }
 
@@ -74,7 +75,7 @@ export const RemindersView: React.FC<{
   const ReminderCard = ({ r, color, label }: { r: any; color: string; label: string }) => {
     const taskInfo = getTaskInfo(r.taskId);
     if (!taskInfo) return null;
-    const { task, assignee } = taskInfo;
+    const { task, assignees } = taskInfo;
 
     return (
       <div 
@@ -110,7 +111,7 @@ export const RemindersView: React.FC<{
             <button 
               className="close-btn" 
               title="Send email reminder"
-              onClick={(e) => { e.stopPropagation(); handleEmailReminder(task, assignee); }}
+              onClick={(e) => { e.stopPropagation(); handleEmailReminder(task, assignees); }}
               style={{ background: 'var(--surface-3)', color: 'var(--text-3)' }}
             >
               <Mail size={16} />
@@ -128,10 +129,24 @@ export const RemindersView: React.FC<{
         
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '1.25rem', paddingTop: '1rem', borderTop: `1px solid ${color}1A` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <div className="avatar" style={{ width: '24px', height: '24px', fontSize: '0.6rem' }}>
-              {assignee?.full_name.charAt(0) || '?'}
+            <div style={{ display: 'flex' }}>
+              {assignees.slice(0, 3).map((assignee, index) => (
+                <div
+                  key={assignee.id}
+                  className="avatar"
+                  title={assignee.full_name}
+                  style={{
+                    width: '24px', height: '24px', fontSize: '0.6rem',
+                    marginLeft: index === 0 ? 0 : '-6px'
+                  }}
+                >
+                  {assignee.full_name.charAt(0)}
+                </div>
+              ))}
             </div>
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-3)' }}>{assignee?.full_name || 'Unassigned'}</span>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-3)' }}>
+              {assignees.map(assignee => assignee.full_name).join(', ') || 'Unassigned'}
+            </span>
           </div>
           <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-4)', display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
             VIEW TASK <ChevronRight size={14} />
@@ -376,7 +391,7 @@ export const RemindersView: React.FC<{
             gap: '1.25rem' 
           }}>
             {undoneTasks.length > 0 ? undoneTasks.map(task => {
-              const assignee = profiles.find(p => p.id === task.assignee_id);
+              const assignees = profiles.filter(profile => getTaskAssigneeIds(task).includes(profile.id));
               const isOverdue = task.end_date && new Date(task.end_date) < new Date();
 
               return (
@@ -409,9 +424,9 @@ export const RemindersView: React.FC<{
                         )}
                       </div>
                       <button 
-                        onClick={(e) => { e.stopPropagation(); handleEmailReminder(task, assignee); }}
+                        onClick={(e) => { e.stopPropagation(); handleEmailReminder(task, assignees); }}
                         style={{ border: 'none', background: 'transparent', color: 'var(--text-4)', cursor: 'pointer', padding: '2px' }}
-                        title="Email Assignee"
+                        title="Email Assignees"
                       >
                         <Mail size={14} />
                       </button>
@@ -420,8 +435,20 @@ export const RemindersView: React.FC<{
                   </div>
                   
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '1rem' }}>
-                    <div className="avatar" style={{ width: '24px', height: '24px', fontSize: '0.65rem' }}>
-                      {assignee?.full_name.charAt(0) || '?'}
+                    <div style={{ display: 'flex' }}>
+                      {assignees.slice(0, 3).map((assignee, index) => (
+                        <div
+                          key={assignee.id}
+                          className="avatar"
+                          title={assignee.full_name}
+                          style={{
+                            width: '24px', height: '24px', fontSize: '0.65rem',
+                            marginLeft: index === 0 ? 0 : '-6px'
+                          }}
+                        >
+                          {assignee.full_name.charAt(0)}
+                        </div>
+                      ))}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: isOverdue ? '#ef4444' : 'var(--text-4)', fontSize: '0.7rem', fontWeight: 600 }}>
                       <Calendar size={12} />

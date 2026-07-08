@@ -9,6 +9,9 @@ interface AppDateTimePickerProps {
   includeDate?: boolean;
   includeTime?: boolean;
   compact?: boolean;
+  min?: string;
+  max?: string;
+  disabled?: boolean;
 }
 
 const pad = (value: number) => String(value).padStart(2, '0');
@@ -62,11 +65,16 @@ export const AppDateTimePicker: React.FC<AppDateTimePickerProps> = ({
   placeholder,
   includeDate = true,
   includeTime = true,
-  compact = false
+  compact = false,
+  min,
+  max,
+  disabled = false
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const resolvedPlaceholder = placeholder || (includeDate ? 'Select date' : 'Select time');
   const parsed = parseValue(value);
+  const minDate = parseValue(min || '');
+  const maxDate = parseValue(max || '');
   const initialDate = parsed || new Date();
   const [draft, setDraft] = useState<Date>(initialDate);
   const [viewDate, setViewDate] = useState<Date>(initialDate);
@@ -193,20 +201,29 @@ export const AppDateTimePicker: React.FC<AppDateTimePickerProps> = ({
     return hour12 === 12 ? 12 : hour12 + 12;
   };
 
-  const updatePeriod = (period: string) => {
-    const next = new Date(draft);
-    next.setHours(to24Hour(displayHour, period));
+  const clampToRange = (date: Date) => {
+    if (minDate && date < minDate) return new Date(minDate);
+    if (maxDate && date > maxDate) return new Date(maxDate);
+    return date;
+  };
+
+  const commitDraft = (date: Date) => {
+    const next = clampToRange(date);
     next.setSeconds(0, 0);
     setDraft(next);
     onChange(includeDate ? toDateTimeValue(next) : toTimeValue(next));
   };
 
+  const updatePeriod = (period: string) => {
+    const next = new Date(draft);
+    next.setHours(to24Hour(displayHour, period));
+    commitDraft(next);
+  };
+
   const updateHour = (hour: string) => {
     const next = new Date(draft);
     next.setHours(to24Hour(Number(hour), displayPeriod));
-    next.setSeconds(0, 0);
-    setDraft(next);
-    onChange(includeDate ? toDateTimeValue(next) : toTimeValue(next));
+    commitDraft(next);
   };
 
   const minuteOptions = Array.from({ length: 60 }, (_, minute) => ({
@@ -215,7 +232,8 @@ export const AppDateTimePicker: React.FC<AppDateTimePickerProps> = ({
   }));
 
   const applyValue = (nextDraft = draft) => {
-    onChange(includeDate ? toDateTimeValue(nextDraft) : toTimeValue(nextDraft));
+    const next = clampToRange(nextDraft);
+    onChange(includeDate ? toDateTimeValue(next) : toTimeValue(next));
     setIsOpen(false);
   };
 
@@ -223,17 +241,13 @@ export const AppDateTimePicker: React.FC<AppDateTimePickerProps> = ({
     const next = new Date(draft);
     if (part === 'hour') next.setHours(Number(nextValue));
     else next.setMinutes(Number(nextValue));
-    next.setSeconds(0, 0);
-    setDraft(next);
-    onChange(includeDate ? toDateTimeValue(next) : toTimeValue(next));
+    commitDraft(next);
   };
 
   const selectDay = (day: Date) => {
     const next = new Date(draft);
     next.setFullYear(day.getFullYear(), day.getMonth(), day.getDate());
-    next.setSeconds(0, 0);
-    setDraft(next);
-    onChange(toDateTimeValue(next));
+    commitDraft(next);
     if (!includeTime) setIsOpen(false);
   };
 
@@ -257,6 +271,7 @@ export const AppDateTimePicker: React.FC<AppDateTimePickerProps> = ({
         ref={triggerRef}
         type="button"
         className={`app-date-trigger ${value ? '' : 'is-placeholder'}`}
+        disabled={disabled}
         onClick={() => setIsOpen(open => !open)}
       >
         {includeDate ? <Calendar size={14} /> : <Clock size={14} />}
@@ -302,12 +317,21 @@ export const AppDateTimePicker: React.FC<AppDateTimePickerProps> = ({
                     day.getMonth() === draft.getMonth() &&
                     day.getDate() === draft.getDate()
                   );
+                  const dayStart = new Date(day);
+                  dayStart.setHours(0, 0, 0, 0);
+                  const dayEnd = new Date(day);
+                  dayEnd.setHours(23, 59, 59, 999);
+                  const isDisabled = Boolean(
+                    (minDate && dayEnd < minDate) ||
+                    (maxDate && dayStart > maxDate)
+                  );
 
                   return (
                     <button
                       type="button"
                       key={day.toISOString()}
                       className={`${isCurrentMonth ? '' : 'is-muted'} ${isSelected ? 'is-selected' : ''}`}
+                      disabled={isDisabled}
                       onClick={() => selectDay(day)}
                     >
                       {day.getDate()}

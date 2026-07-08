@@ -2048,6 +2048,19 @@ textarea:focus-visible {
   box-shadow: var(--shadow-sm) !important;
 }
 
+.app-date-grid button:disabled {
+  background: transparent !important;
+  color: var(--text-4) !important;
+  box-shadow: none !important;
+  cursor: not-allowed;
+  opacity: 0.22;
+}
+
+.app-date-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .primary-btn::before,
 .task-card::before {
   display: none !important;
@@ -2579,4 +2592,77 @@ textarea:focus {
   background: rgba(59, 130, 246, 0.1) !important;
   border-color: rgba(59, 130, 246, 0.24) !important;
   color: var(--primary) !important;
+}
+
+/* High priority is a semantic alert and intentionally overrides the normal accent. */
+.task-card.high-priority-task,
+.high-priority-row {
+  border-color: rgba(239, 68, 68, 0.72) !important;
+  background:
+    linear-gradient(135deg, rgba(239, 68, 68, 0.11), rgba(239, 68, 68, 0.025)),
+    var(--surface) !important;
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.12), 0 12px 30px rgba(239, 68, 68, 0.14) !important;
+}
+
+.task-card.high-priority-task::before,
+.high-priority-row::before {
+  background: #ef4444 !important;
+}
+
+.task-card.high-priority-task:hover,
+.high-priority-row:hover {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.22), 0 16px 36px rgba(239, 68, 68, 0.2) !important;
+}
+
+.scrum-row.high-priority-row td {
+  border-top: 1px solid rgba(239, 68, 68, 0.5) !important;
+  border-bottom: 1px solid rgba(239, 68, 68, 0.5) !important;
+  background: rgba(239, 68, 68, 0.07) !important;
+}
+
+.scrum-row.high-priority-row td:first-child {
+  border-left: 4px solid #ef4444 !important;
+}
+
+.scrum-row.high-priority-row td:last-child {
+  border-right: 1px solid rgba(239, 68, 68, 0.5) !important;
+}
+
+.high-priority-alert {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.18rem 0.42rem;
+  border: 1px solid rgba(239, 68, 68, 0.38);
+  border-radius: var(--radius-full);
+  background: rgba(239, 68, 68, 0.14);
+  color: #ef4444;
+  font-size: 0.6rem;
+  font-weight: 800;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.modal-content.high-priority-modal {
+  border: 1.5px solid rgba(239, 68, 68, 0.72) !important;
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.14), 0 24px 70px rgba(239, 68, 68, 0.22) !important;
+}
+
+.high-priority-modal-alert {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: var(--radius-full);
+  background: rgba(239, 68, 68, 0.14);
+  color: #ef4444;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }

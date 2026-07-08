@@ -16,10 +16,13 @@ BEGIN
         RAISE EXCEPTION 'Unauthorized: Only administrators can erase users.';
     END IF;
 
-    -- Clean up observers (observers is a UUID array, so it won't cascade automatically)
+    -- Clean up UUID arrays, which do not cascade automatically.
     UPDATE public.tasks 
-    SET observers = array_remove(observers, target_user_id)
-    WHERE target_user_id = ANY(observers);
+    SET
+        observers = array_remove(observers, target_user_id),
+        assignee_ids = array_remove(assignee_ids, target_user_id)
+    WHERE target_user_id = ANY(COALESCE(observers, ARRAY[]::uuid[]))
+       OR target_user_id = ANY(COALESCE(assignee_ids, ARRAY[]::uuid[]));
 
     -- Delete from auth.users
     -- Because of the ON DELETE CASCADE on Profiles, this will automatically 

@@ -6,6 +6,7 @@ CREATE TABLE public.profiles (
     id uuid REFERENCES auth.users(id) PRIMARY KEY,
     email text NOT NULL,
     full_name text,
+    department text CHECK (department IN ('Operations', 'Finance', 'Top Management')),
     role text NOT NULL CHECK (role IN ('Admin', 'Manager', 'Worker', 'Observer')),
     created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
 );
@@ -42,9 +43,13 @@ CREATE TABLE public.tasks (
     title text NOT NULL,
     description text,
     assignee_id uuid REFERENCES public.profiles(id),
+    assignee_ids uuid[] NOT NULL DEFAULT '{}',
     creator_id uuid REFERENCES public.profiles(id),
     status text NOT NULL DEFAULT 'To Do' CHECK (status IN ('To Do', 'In Progress', 'Review', 'Ready for Publishing', 'Done')),
+    priority text NOT NULL DEFAULT 'Medium' CHECK (priority IN ('High', 'Medium', 'Low')),
     category text,
+    deleted_at timestamp with time zone DEFAULT NULL,
+    deleted_by uuid REFERENCES public.profiles(id) ON DELETE SET NULL DEFAULT NULL,
     observers uuid[] DEFAULT '{}',
     created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
 );
@@ -58,7 +63,8 @@ ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can view relevant tasks" ON public.tasks
     FOR SELECT USING (
         -- Assignee, Creator, or in Observers list
-        auth.uid() = assignee_id OR 
+        COALESCE(assignee_ids, ARRAY[]::uuid[]) @> ARRAY[auth.uid()] OR
+        auth.uid() = assignee_id OR
         auth.uid() = creator_id OR 
         auth.uid() = ANY (observers)
         -- Admin can see all
@@ -80,7 +86,8 @@ CREATE POLICY "Admins can insert tasks" ON public.tasks
 CREATE POLICY "Users can update their tasks or Admins can update any task" ON public.tasks
     FOR UPDATE USING (
         -- Assignee can update
-        auth.uid() = assignee_id
+        COALESCE(assignee_ids, ARRAY[]::uuid[]) @> ARRAY[auth.uid()]
+        OR auth.uid() = assignee_id
         -- Admin can update
         OR (EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'Admin'))
     );

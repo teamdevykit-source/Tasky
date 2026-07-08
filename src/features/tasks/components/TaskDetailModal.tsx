@@ -1,15 +1,26 @@
 import React from 'react';
 import { useStore } from '../../../store/useStore';
-import { X, Clock, Trash2, CheckCircle2, AlignLeft, Eye, Lock, Repeat, Mail } from 'lucide-react';
+import { X, Clock, Trash2, CheckCircle2, AlignLeft, Eye, Lock, Repeat, Mail, Bell, AlertTriangle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { formatDateTime, formatTime12Hour } from '../../../lib/format';
 import { computeNextRecurrence } from '../../../lib/recurrence';
-import type { RecurrenceType, Task } from '../../../lib/supabase';
+import {
+  getTaskAssigneeIds,
+  isTaskAssignee,
+  type RecurrenceType,
+  type Task,
+  type TaskPriority
+} from '../../../lib/supabase';
 import { AppDateTimePicker } from '../../../components/Shared/AppDateTimePicker';
 import { AppSelect } from '../../../components/Shared/AppSelect';
 
 const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const priorityOptions: { value: TaskPriority; label: string; color: string }[] = [
+  { value: 'High', label: 'High', color: '#ef4444' },
+  { value: 'Medium', label: 'Medium', color: '#f59e0b' },
+  { value: 'Low', label: 'Low', color: '#22c55e' }
+];
 
 const normalizeRecurrenceTime = (time?: string | null) => (time || '09:00').slice(0, 5);
 
@@ -21,6 +32,7 @@ const getEditableDay = (type: RecurrenceType, currentDay?: number | null) => {
 
 export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> = ({ taskId, onClose }) => {
   const [isConfirmingDelete, setIsConfirmingDelete] = React.useState(false);
+  const [isAssigneeOpen, setIsAssigneeOpen] = React.useState(false);
   const tasks = useStore(s => s.tasks);
   const profiles = useStore(s => s.profiles);
   const statuses = useStore(s => s.statuses);
@@ -35,7 +47,8 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
   
   if (!task || !currentUser) return null;
 
-  const assignee = profiles.find(u => u.id === task.assignee_id);
+  const assigneeIds = getTaskAssigneeIds(task);
+  const assignees = profiles.filter(profile => assigneeIds.includes(profile.id));
   const creator = profiles.find(u => u.id === task.creator_id);
   const isObserver = task.observers?.includes(currentUser.id) && currentUser.role !== 'Admin';
   
@@ -44,12 +57,31 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
   // 2. If regular task: Creator, Assignee, or Admin can edit/delete.
   const canEdit = task.is_self_task 
     ? (currentUser.id === task.creator_id)
-    : (!isObserver && (currentUser.role === 'Admin' || currentUser.id === task.assignee_id || currentUser.id === task.creator_id));
+    : (!isObserver && (
+      currentUser.role === 'Admin' ||
+      isTaskAssignee(task, currentUser.id) ||
+      currentUser.id === task.creator_id
+    ));
   const canDelete = task.is_self_task 
     ? (currentUser.id === task.creator_id)
     : (currentUser.role === 'Admin' || currentUser.id === task.creator_id);
+  const canManageAssignees = currentUser.role === 'Admin';
 
   const statColor = statuses.find(s => s.name === task.status)?.color || '#64748b';
+  const priority = task.priority || 'Medium';
+  const isHighPriority = priority === 'High';
+  const priorityColor = priorityOptions.find(option => option.value === priority)?.color || '#f59e0b';
+
+  const toggleAssignee = (profileId: string) => {
+    const nextAssigneeIds = assigneeIds.includes(profileId)
+      ? assigneeIds.filter(id => id !== profileId)
+      : [...assigneeIds, profileId];
+
+    updateTask(task.id, {
+      assignee_id: nextAssigneeIds[0] || null,
+      assignee_ids: nextAssigneeIds
+    });
+  };
 
   const handleDelete = () => {
     setIsConfirmingDelete(true);
@@ -90,12 +122,16 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '850px', width: '95%', padding: 0 }}>
+      <div
+        className={`modal-content ${isHighPriority ? 'high-priority-modal' : ''}`}
+        onClick={e => e.stopPropagation()}
+        style={{ maxWidth: '850px', width: '95%', padding: 0 }}
+      >
         
         {/* Header */}
         <div style={{ 
           background: 'var(--surface-2)',
-          borderBottom: `3px solid ${statColor}`,
+          borderBottom: `3px solid ${isHighPriority ? '#ef4444' : statColor}`,
           padding: '2.25rem 2.5rem', color: 'var(--text-1)', position: 'relative',
           overflow: 'hidden'
         }}>
@@ -106,6 +142,12 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
           <button className="close-btn" onClick={onClose} style={{ position: 'absolute', top: '1.5rem', right: '1.5rem' }}>
             <X size={20} />
           </button>
+          {isHighPriority && (
+            <div className="high-priority-modal-alert">
+              <AlertTriangle size={15} />
+              High priority task
+            </div>
+          )}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
             <div style={{ 
               background: 'var(--surface)', padding: '0.25rem 0.7rem', 
@@ -114,6 +156,14 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
               border: '1px solid var(--border)'
             }}>
               {task.status}
+            </div>
+            <div style={{
+              background: `${priorityColor}18`, color: priorityColor, padding: '0.25rem 0.7rem',
+              borderRadius: 'var(--radius-full)', fontSize: '0.7rem', fontWeight: 700,
+              textTransform: 'uppercase', letterSpacing: '0.05em',
+              border: `1px solid ${priorityColor}35`
+            }}>
+              {priority} Priority
             </div>
             {task.category && (
               <div style={{ 
@@ -162,9 +212,9 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
                 maxWidth: '400px', textAlign: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)'
               }}>
                 <Trash2 size={40} style={{ margin: '0 auto 1rem', color: 'var(--danger)', opacity: 0.8 }} />
-                <h3 style={{ marginBottom: '0.5rem', color: 'var(--text-1)' }}>Delete Task</h3>
+                <h3 style={{ marginBottom: '0.5rem', color: 'var(--text-1)' }}>Archive Task</h3>
                 <p style={{ fontSize: '0.9rem', color: 'var(--text-3)', marginBottom: '1.5rem', lineHeight: 1.5 }}>
-                  Are you sure you want to delete this task? This action cannot be undone and will remove it from the database permanently.
+                  This task will be removed from active views and moved to Archive. An admin can restore it later.
                 </p>
                 <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
                   <button 
@@ -177,7 +227,7 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
                     onClick={confirmDelete}
                     style={{ padding: '0.6rem 1.2rem', borderRadius: 'var(--radius-md)', background: 'var(--danger)', color: 'white' }}
                   >
-                    Delete Permanently
+                    Move to Archive
                   </button>
                 </div>
               </div>
@@ -217,30 +267,102 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
 
           {/* Right: Sidebar meta */}
           <aside style={{ padding: '2rem 1.75rem', background: 'var(--surface-2)', display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
-            {/* Assignee */}
+            {/* Assignees */}
             {!task.is_self_task && (
-              <div>
-                <h3 style={metaLabel}>Assignee</h3>
-                <div style={{ 
-                  display: 'flex', alignItems: 'center', gap: '0.6rem', 
-                  background: 'var(--surface)', padding: '0.8rem', borderRadius: 'var(--radius-md)', 
-                  border: '1px solid var(--border)' 
-                }}>
-                  <div className="avatar" style={{ width: '32px', height: '32px', fontSize: '0.8rem' }}>{assignee?.full_name.charAt(0)}</div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-1)' }}>{assignee?.full_name || 'Unassigned'}</div>
-                    <div style={{ fontSize: '0.68rem', color: 'var(--text-4)' }}>Assignee</div>
+              <div style={{ position: 'relative' }}>
+                <h3 style={metaLabel}>Assignees</h3>
+                <div
+                  role={canManageAssignees ? 'button' : undefined}
+                  tabIndex={canManageAssignees ? 0 : undefined}
+                  onClick={() => canManageAssignees && setIsAssigneeOpen(open => !open)}
+                  onKeyDown={event => {
+                    if (canManageAssignees && (event.key === 'Enter' || event.key === ' ')) {
+                      event.preventDefault();
+                      setIsAssigneeOpen(open => !open);
+                    }
+                  }}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: '0.6rem',
+                    background: 'var(--surface)', padding: '0.8rem', borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border)', cursor: canManageAssignees ? 'pointer' : 'default',
+                    textAlign: 'left'
+                  }}
+                >
+                  <div style={{ display: 'flex' }}>
+                    {assignees.slice(0, 3).map((assignee, index) => (
+                      <div
+                        key={assignee.id}
+                        className="avatar"
+                        style={{
+                          width: '32px', height: '32px', fontSize: '0.8rem',
+                          marginLeft: index === 0 ? 0 : '-8px'
+                        }}
+                      >
+                        {assignee.full_name.charAt(0)}
+                      </div>
+                    ))}
                   </div>
-                  {assignee?.email && (
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, fontSize: '0.85rem', color: 'var(--text-1)' }}>
+                      {assignees.length > 0
+                        ? assignees.map(assignee => assignee.full_name).join(', ')
+                        : 'Unassigned'}
+                    </div>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-4)' }}>
+                      {assignees.length === 1 ? '1 assignee' : `${assignees.length} assignees`}
+                    </div>
+                  </div>
+                  {assignees.some(assignee => assignee.email) && (
                     <button 
-                      onClick={() => sendTaskReminderEmail(task.id)}
+                      type="button"
+                      onClick={event => {
+                        event.stopPropagation();
+                        sendTaskReminderEmail(task.id);
+                      }}
                       style={{ background: 'var(--surface-3)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '0.4rem', color: 'var(--text-3)', cursor: 'pointer' }}
-                      title="Notify via Email"
+                      title="Notify assignees via email"
                     >
                       <Mail size={14} />
                     </button>
                   )}
                 </div>
+
+                {canManageAssignees && isAssigneeOpen && (
+                  <div style={{
+                    position: 'absolute', top: 'calc(100% + 0.4rem)', left: 0, right: 0,
+                    background: 'var(--surface)', borderRadius: 'var(--radius-lg)',
+                    border: '1px solid var(--border)', boxShadow: 'var(--shadow-lg)',
+                    zIndex: 60, maxHeight: '220px', overflowY: 'auto', padding: '0.35rem'
+                  }}>
+                    {profiles.map(profile => {
+                      const isSelected = assigneeIds.includes(profile.id);
+                      return (
+                        <label
+                          key={profile.id}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '0.65rem',
+                            padding: '0.6rem', borderRadius: 'var(--radius-md)',
+                            cursor: 'pointer',
+                            background: isSelected ? 'var(--primary-light)' : 'transparent'
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleAssignee(profile.id)}
+                            style={{ accentColor: 'var(--primary)' }}
+                          />
+                          <div className="avatar" style={{ width: '24px', height: '24px', fontSize: '0.65rem' }}>
+                            {profile.full_name.charAt(0)}
+                          </div>
+                          <span style={{ fontSize: '0.8rem', color: 'var(--text-1)', fontWeight: 600 }}>
+                            {profile.full_name}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
@@ -297,6 +419,49 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
                     <span style={{ fontSize: '0.78rem', color: 'var(--text-4)' }}>No observers.</span>
                   )}
                 </div>
+              </div>
+            )}
+
+            {!task.is_self_task && (
+              <div>
+                <h3 style={metaLabel}>
+                  <Bell size={12} style={{ display: 'inline', marginRight: '0.3rem', opacity: 0.5 }} />
+                  Email Reminder
+                </h3>
+                {canEdit ? (
+                  <>
+                    <AppDateTimePicker
+                      value={task.reminder_at || ''}
+                      onChange={value => updateTask(task.id, {
+                        reminder_at: value || null,
+                        reminder_sent_at: null
+                      })}
+                      placeholder={
+                        !task.end_date
+                          ? 'Set an end date first'
+                          : assigneeIds.length === 0
+                            ? 'Assign at least one person first'
+                            : 'Select reminder date'
+                      }
+                      min={new Date(new Date().setSeconds(0, 0)).toISOString()}
+                      max={task.end_date}
+                      disabled={!task.end_date || assigneeIds.length === 0}
+                      compact
+                    />
+                    {task.reminder_sent_at && (
+                      <div style={{ marginTop: '0.4rem', fontSize: '0.67rem', color: 'var(--success)' }}>
+                        Last sent {formatDateTime(task.reminder_sent_at)}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div style={{
+                    padding: '0.65rem', background: 'var(--surface)', borderRadius: 'var(--radius-sm)',
+                    fontSize: '0.78rem', color: 'var(--text-3)', border: '1px solid var(--border)'
+                  }}>
+                    {task.reminder_at ? formatDateTime(task.reminder_at) : 'No reminder scheduled'}
+                  </div>
+                )}
               </div>
             )}
 
@@ -411,6 +576,28 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
                 </div>
               </div>
             )}
+
+            {/* Priority Control */}
+            <div>
+              <h3 style={metaLabel}>Priority</h3>
+              {canEdit ? (
+                <AppSelect
+                  value={priority}
+                  onChange={value => updateTask(task.id, { priority: value as TaskPriority })}
+                  options={priorityOptions}
+                  accentColor={priorityColor}
+                  fullWidth
+                />
+              ) : (
+                <div style={{
+                  padding: '0.65rem', background: 'var(--surface)', borderRadius: 'var(--radius-sm)',
+                  fontSize: '0.8rem', textAlign: 'center', color: priorityColor,
+                  border: `1px solid ${priorityColor}35`, fontWeight: 700
+                }}>
+                  {priority}
+                </div>
+              )}
+            </div>
 
             {/* Status Control */}
             <div style={{ marginTop: 'auto' }}>

@@ -1,15 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useStore } from '../../../store/useStore';
 import { Calendar, Sparkles, CheckCircle2, X, ChevronDown, ChevronUp, Users, Lock, Repeat, RotateCcw } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { RecurrenceType } from '../../../lib/supabase';
+import type { RecurrenceType, TaskPriority } from '../../../lib/supabase';
 import { computeNextRecurrence } from '../../../lib/recurrence';
 import { AppDateTimePicker } from '../../../components/Shared/AppDateTimePicker';
 import { AppSelect } from '../../../components/Shared/AppSelect';
 
 const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DAYS_OF_WEEK_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const PRIORITY_OPTIONS: { value: TaskPriority; color: string }[] = [
+  { value: 'High', color: '#ef4444' },
+  { value: 'Medium', color: '#f59e0b' },
+  { value: 'Low', color: '#22c55e' }
+];
 
 export const CreateTaskModal: React.FC<{ onClose: () => void, forceSelfTask?: boolean }> = ({ onClose, forceSelfTask }) => {
   const addTask = useStore(s => s.addTask);
@@ -17,13 +22,18 @@ export const CreateTaskModal: React.FC<{ onClose: () => void, forceSelfTask?: bo
   const profiles = useStore(s => s.profiles);
   const categories = useStore(s => s.categories);
   const statuses = useStore(s => s.statuses);
+  const setAlertData = useStore(s => s.setAlertData);
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [assigneeId, setAssigneeId] = useState(currentUser?.id || '');
+  const [selectedAssigneeIds, setSelectedAssigneeIds] = useState<string[]>(
+    currentUser?.id ? [currentUser.id] : []
+  );
+  const [priority, setPriority] = useState<TaskPriority>('Medium');
   const [category, setCategory] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [reminderAt, setReminderAt] = useState('');
   const [selectedObservers, setSelectedObservers] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -37,19 +47,13 @@ export const CreateTaskModal: React.FC<{ onClose: () => void, forceSelfTask?: bo
   const [recurrenceTime, setRecurrenceTime] = useState('09:00');
   const [recurrenceDay, setRecurrenceDay] = useState<number>(1); // Monday or 1st of month
 
-  useEffect(() => {
-    if (!currentUser) return;
-    if (categories.length > 0 && !category) {
-      setCategory(categories[0].name);
-    }
-  }, [categories, profiles, currentUser]);
-
   if (!currentUser) return null;
 
   const defaultStatus = statuses[0]?.name || 'To Do';
   const selectedCatObj = categories.find(c => c.name === category);
   const selectedCategoryColor = selectedCatObj?.color || '#818cf8';
-  const assigneeObj = profiles.find(p => p.id === assigneeId);
+  const selectedPriorityColor = PRIORITY_OPTIONS.find(option => option.value === priority)?.color || '#f59e0b';
+  const selectedAssignees = profiles.filter(profile => selectedAssigneeIds.includes(profile.id));
 
   // ── Build recurrence summary text for preview ──
   const getRecurrenceSummary = () => {
@@ -64,6 +68,22 @@ export const CreateTaskModal: React.FC<{ onClose: () => void, forceSelfTask?: bo
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
+
+    if (startDate && endDate && new Date(endDate) < new Date(startDate)) {
+      setAlertData({ message: 'End date cannot be before the start date.', type: 'error' });
+      return;
+    }
+
+    if (reminderAt && (!endDate || new Date(reminderAt) > new Date(endDate))) {
+      setAlertData({ message: 'Reminder must be scheduled on or before the end date.', type: 'error' });
+      return;
+    }
+
+    if (reminderAt && selectedAssigneeIds.length === 0) {
+      setAlertData({ message: 'Select at least one assignee for the email reminder.', type: 'error' });
+      return;
+    }
+
     setIsSubmitting(true);
 
     const nextRecurrence = isRecurring
@@ -73,14 +93,19 @@ export const CreateTaskModal: React.FC<{ onClose: () => void, forceSelfTask?: bo
     const result = await addTask({
       title,
       description,
-      assignee_id: isSelfTask ? currentUser.id : (assigneeId || currentUser.id),
+      assignee_id: isSelfTask
+        ? currentUser.id
+        : (selectedAssigneeIds[0] || null),
+      assignee_ids: isSelfTask ? [currentUser.id] : selectedAssigneeIds,
       creator_id: currentUser.id,
       status: defaultStatus,
+      priority,
       category: category || null,
       observers: isSelfTask ? [] : selectedObservers,
       is_self_task: isSelfTask,
       start_date: startDate || undefined,
       end_date: endDate || undefined,
+      reminder_at: reminderAt || null,
       // Recurrence fields
       is_recurring: isRecurring || undefined,
       recurrence_type: isRecurring ? recurrenceType : undefined,
@@ -173,6 +198,37 @@ export const CreateTaskModal: React.FC<{ onClose: () => void, forceSelfTask?: bo
                 placeholder="Add details, requirements, or notes..."
                 style={{ ...inputStyle, minHeight: '120px', resize: 'vertical' }}
               />
+            </div>
+
+            {/* Priority Pills */}
+            <div>
+              <label style={labelStyle}>Priority</label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                {PRIORITY_OPTIONS.map(option => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setPriority(option.value)}
+                    style={{
+                      padding: '0.35rem 0.875rem',
+                      borderRadius: 'var(--radius-full)',
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      border: `1.5px solid ${priority === option.value ? option.color : 'var(--border-strong)'}`,
+                      background: priority === option.value ? `${option.color}15` : 'transparent',
+                      color: priority === option.value ? option.color : 'var(--text-3)',
+                      transition: 'var(--transition-fast)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.35rem'
+                    }}
+                  >
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: option.color }} />
+                    {option.value}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Category Pills */}
@@ -426,10 +482,10 @@ export const CreateTaskModal: React.FC<{ onClose: () => void, forceSelfTask?: bo
               )}
             </div>
 
-            {/* Assignee Selection (Dropdown) */}
+            {/* Assignee Selection (Multi-select Dropdown) */}
             {currentUser.role === 'Admin' && !isSelfTask && (
               <div style={{ position: 'relative' }}>
-                <label style={labelStyle}>Assignee</label>
+                <label style={labelStyle}>Assignees</label>
                 <button 
                   type="button"
                   onClick={() => setIsAssigneeOpen(!isAssigneeOpen)}
@@ -441,16 +497,30 @@ export const CreateTaskModal: React.FC<{ onClose: () => void, forceSelfTask?: bo
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                    {assigneeObj ? (
+                    {selectedAssignees.length > 0 ? (
                       <>
-                        <div className="avatar" style={{ width: '22px', height: '22px', fontSize: '0.6rem', borderWidth: '1px' }}>
-                          {assigneeObj.full_name.charAt(0).toUpperCase()}
+                        <div style={{ display: 'flex', marginRight: '0.15rem' }}>
+                          {selectedAssignees.slice(0, 3).map((assignee, index) => (
+                            <div
+                              key={assignee.id}
+                              className="avatar"
+                              style={{
+                                width: '22px', height: '22px', fontSize: '0.6rem', borderWidth: '1px',
+                                marginLeft: index === 0 ? 0 : '-6px'
+                              }}
+                            >
+                              {assignee.full_name.charAt(0).toUpperCase()}
+                            </div>
+                          ))}
                         </div>
-                        <span style={{ fontSize: '0.9rem', color: 'var(--text-1)', fontWeight: 600 }}>{assigneeObj.full_name}</span>
-                        <span style={{ fontSize: '0.7rem', color: 'var(--text-4)' }}>({assigneeObj.role})</span>
+                        <span style={{ fontSize: '0.9rem', color: 'var(--text-1)', fontWeight: 600 }}>
+                          {selectedAssignees.length === 1
+                            ? selectedAssignees[0].full_name
+                            : `${selectedAssignees.length} assignees selected`}
+                        </span>
                       </>
                     ) : (
-                      <span style={{ fontSize: '0.9rem', color: 'var(--text-4)' }}>Select assignee...</span>
+                      <span style={{ fontSize: '0.9rem', color: 'var(--text-4)' }}>Select assignees...</span>
                     )}
                   </div>
                   {isAssigneeOpen ? <ChevronUp size={16} color="var(--text-4)" /> : <ChevronDown size={16} color="var(--text-4)" />}
@@ -463,35 +533,50 @@ export const CreateTaskModal: React.FC<{ onClose: () => void, forceSelfTask?: bo
                     border: '1px solid var(--border)', boxShadow: 'var(--shadow-lg)',
                     zIndex: 60, maxHeight: '200px', overflowY: 'auto', padding: '0.35rem'
                   }}>
-                    {profiles.map(p => (
-                      <div 
+                    {profiles.map(p => {
+                      const isSelected = selectedAssigneeIds.includes(p.id);
+                      return (
+                      <label
                         key={p.id} 
-                        onClick={() => {
-                          setAssigneeId(p.id);
-                          setIsAssigneeOpen(false);
-                        }}
                         style={{
                           display: 'flex', alignItems: 'center', gap: '0.75rem',
                           padding: '0.6rem 0.75rem', borderRadius: 'var(--radius-md)', 
                           cursor: 'pointer', transition: 'var(--transition-fast)',
-                          background: assigneeId === p.id ? 'var(--primary-light)' : 'transparent',
+                          background: isSelected ? 'var(--primary-light)' : 'transparent',
                           marginBottom: '0.15rem'
                         }}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = assigneeId === p.id ? 'var(--primary-light)' : 'var(--surface-2)')}
-                        onMouseLeave={(e) => (e.currentTarget.style.background = assigneeId === p.id ? 'var(--primary-light)' : 'transparent')}
+                        onMouseEnter={e => {
+                          e.currentTarget.style.background = isSelected ? 'var(--primary-light)' : 'var(--surface-2)';
+                        }}
+                        onMouseLeave={e => {
+                          e.currentTarget.style.background = isSelected ? 'var(--primary-light)' : 'transparent';
+                        }}
                       >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={event => {
+                            setSelectedAssigneeIds(ids => (
+                              event.target.checked
+                                ? [...ids, p.id]
+                                : ids.filter(id => id !== p.id)
+                            ));
+                          }}
+                          style={{ accentColor: 'var(--primary)' }}
+                        />
                         <div className="avatar" style={{ width: '24px', height: '24px', fontSize: '0.65rem', borderWidth: '1px' }}>{p.full_name.charAt(0).toUpperCase()}</div>
                         <div style={{ display: 'flex', flexDirection: 'column' }}>
                           <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-1)' }}>{p.full_name}</span>
                           <span style={{ fontSize: '0.7rem', color: 'var(--text-4)' }}>{p.role}</span>
                         </div>
-                        {assigneeId === p.id && (
+                        {isSelected && (
                           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
                             <CheckCircle2 size={14} color="var(--primary)" />
                           </div>
                         )}
-                      </div>
-                    ))}
+                      </label>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -537,7 +622,16 @@ export const CreateTaskModal: React.FC<{ onClose: () => void, forceSelfTask?: bo
               opacity: isSelfTask ? 0.85 : 1
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                {category && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                  <span style={{
+                    fontSize: '0.6rem', fontWeight: 700, color: selectedPriorityColor,
+                    background: `${selectedPriorityColor}12`, padding: '0.15rem 0.45rem',
+                    borderRadius: 'var(--radius-sm)', textTransform: 'uppercase',
+                    display: 'inline-block', marginBottom: '0.4rem', letterSpacing: '0.04em'
+                  }}>
+                    {priority}
+                  </span>
+                  {category && (
                   <span style={{
                     fontSize: '0.6rem', fontWeight: 700, color: selectedCategoryColor,
                     background: `${selectedCategoryColor}12`, padding: '0.15rem 0.45rem',
@@ -546,7 +640,8 @@ export const CreateTaskModal: React.FC<{ onClose: () => void, forceSelfTask?: bo
                   }}>
                     {category}
                   </span>
-                )}
+                  )}
+                </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                   {isSelfTask && (
                     <div title="Private Task" style={{ color: 'var(--primary)', opacity: 0.8 }}>
@@ -568,10 +663,25 @@ export const CreateTaskModal: React.FC<{ onClose: () => void, forceSelfTask?: bo
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{description}</ReactMarkdown>
                 </div>
               )}
-              {assigneeObj && (
+              {selectedAssignees.length > 0 && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.6rem' }}>
-                  <div className="avatar" style={{ width: '18px', height: '18px', fontSize: '0.55rem', borderWidth: '1px' }}>{assigneeObj.full_name.charAt(0)}</div>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-4)' }}>{assigneeObj.full_name}</span>
+                  <div style={{ display: 'flex' }}>
+                    {selectedAssignees.slice(0, 4).map((assignee, index) => (
+                      <div
+                        key={assignee.id}
+                        className="avatar"
+                        style={{
+                          width: '18px', height: '18px', fontSize: '0.55rem', borderWidth: '1px',
+                          marginLeft: index === 0 ? 0 : '-5px'
+                        }}
+                      >
+                        {assignee.full_name.charAt(0)}
+                      </div>
+                    ))}
+                  </div>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-4)' }}>
+                    {selectedAssignees.map(assignee => assignee.full_name).join(', ')}
+                  </span>
                 </div>
               )}
 
@@ -602,7 +712,13 @@ export const CreateTaskModal: React.FC<{ onClose: () => void, forceSelfTask?: bo
                 <label style={{ ...labelStyle, fontSize: '0.68rem' }}>Start Date</label>
                 <AppDateTimePicker
                   value={startDate}
-                  onChange={setStartDate}
+                  onChange={value => {
+                    setStartDate(value);
+                    if (value && endDate && new Date(endDate) < new Date(value)) {
+                      setEndDate('');
+                      setReminderAt('');
+                    }
+                  }}
                   placeholder="Select start date"
                 />
               </div>
@@ -610,8 +726,14 @@ export const CreateTaskModal: React.FC<{ onClose: () => void, forceSelfTask?: bo
                 <label style={{ ...labelStyle, fontSize: '0.68rem' }}>End Date</label>
                 <AppDateTimePicker
                   value={endDate}
-                  onChange={setEndDate}
+                  onChange={value => {
+                    setEndDate(value);
+                    if (value && reminderAt && new Date(reminderAt) > new Date(value)) {
+                      setReminderAt('');
+                    }
+                  }}
                   placeholder="Select end date"
+                  min={startDate}
                 />
               </div>
             </div>
@@ -692,6 +814,23 @@ export const CreateTaskModal: React.FC<{ onClose: () => void, forceSelfTask?: bo
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {!isSelfTask && (
+            <div>
+              <div style={sectionLabel}>Email Reminder</div>
+              <AppDateTimePicker
+                value={reminderAt}
+                onChange={setReminderAt}
+                placeholder={endDate ? 'Select reminder date' : 'Select an end date first'}
+                min={new Date(new Date().setSeconds(0, 0)).toISOString()}
+                max={endDate}
+                disabled={!endDate}
+              />
+              <p style={{ marginTop: '0.45rem', fontSize: '0.68rem', color: 'var(--text-4)', lineHeight: 1.4 }}>
+                The selected assignees will receive an email at this time.
+              </p>
             </div>
           )}
         </div>

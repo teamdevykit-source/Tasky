@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import { supabase } from '../lib/supabase';
-import type { Profile, Task, Category, Status } from '../lib/supabase';
+import { canViewTaskByDepartment, getTaskAssigneeIds, isTaskAssignee, supabase } from '../lib/supabase';
+import type { Department, Profile, Task, Category, Status } from '../lib/supabase';
 import { buildRecurringTaskOccurrence, computeNextRecurrenceAfter } from '../lib/recurrence';
 
 type Theme = 'light' | 'dark';
@@ -40,6 +40,7 @@ interface StoreState {
   isLoaded: boolean;
   profiles: Profile[];
   tasks: Task[];
+  archivedTasks: Task[];
   categories: Category[];
   statuses: Status[];
   theme: Theme;
@@ -49,8 +50,8 @@ interface StoreState {
   adminSettingsTab: AdminSettingsTab;
 
   setAlertData: (data: { message: string, type: 'error' | 'success' } | null) => void;
-  viewMode: 'dashboard' | 'kanban' | 'scrum' | 'settings' | 'my-tasks' | 'profile' | 'reminders' | 'recurring';
-  setViewMode: (mode: 'dashboard' | 'kanban' | 'scrum' | 'settings' | 'my-tasks' | 'profile' | 'reminders' | 'recurring') => void;
+  viewMode: 'dashboard' | 'kanban' | 'scrum' | 'settings' | 'archive' | 'my-tasks' | 'profile' | 'reminders' | 'recurring';
+  setViewMode: (mode: 'dashboard' | 'kanban' | 'scrum' | 'settings' | 'archive' | 'my-tasks' | 'profile' | 'reminders' | 'recurring') => void;
   setDashboardTaskFilters: (filters: DashboardTaskFilters | null) => void;
   setAdminSettingsTab: (tab: AdminSettingsTab) => void;
   updatePassword: (password: string) => Promise<void>;
@@ -65,6 +66,7 @@ interface StoreState {
   updateTaskStatus: (taskId: string, status: string) => Promise<void>;
   updateUserRole: (userId: string, role: Profile['role']) => Promise<void>;
   updateUserJobTitle: (userId: string, jobTitle: string) => Promise<void>;
+  updateUserDepartment: (userId: string, department: Department) => Promise<void>;
   inviteUser: (email: string) => Promise<void>;
   sendTaskReminderEmail: (taskId: string) => Promise<boolean>;
   sendEmployeeDeadlineReminders: (userId: string) => Promise<void>;
@@ -74,6 +76,7 @@ interface StoreState {
   deleteStatus: (id: string) => Promise<void>;
   deleteUser: (userId: string) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
+  restoreTask: (id: string) => Promise<void>;
   dismissReminder: (reminderId: string) => void;
   checkTaskDeadlines: () => void;
   processDueRecurringTasks: () => Promise<void>;
@@ -100,7 +103,7 @@ applyTheme(getInitialTheme());
 const getInitialViewMode = (): StoreState['viewMode'] => {
   try {
     const saved = localStorage.getItem('elmeraki-view');
-    if (saved && ['dashboard', 'kanban', 'scrum', 'settings', 'my-tasks', 'profile', 'reminders', 'recurring'].includes(saved)) {
+    if (saved && ['dashboard', 'kanban', 'scrum', 'settings', 'archive', 'my-tasks', 'profile', 'reminders', 'recurring'].includes(saved)) {
       return saved as StoreState['viewMode'];
     }
   } catch { }
@@ -118,6 +121,7 @@ export const useStore = create<StoreState>((set, get) => ({
   isLoaded: false,
   profiles: [],
   tasks: [],
+  archivedTasks: [],
   categories: [],
   statuses: [],
   theme: getInitialTheme(),
@@ -148,7 +152,7 @@ export const useStore = create<StoreState>((set, get) => ({
       
       if (currentUser.role === 'Admin') return true;
       
-      return (t.assignee_id === currentUser.id) ||
+      return isTaskAssignee(t, currentUser.id) ||
              (t.creator_id === currentUser.id) ||
              (t.observers && t.observers.includes(currentUser.id));
     });
@@ -265,27 +269,29 @@ export const useStore = create<StoreState>((set, get) => ({
           ]
         }));
 
-        try {
-          const { error: reminderError } = await supabase.functions.invoke('send-task-reminder', {
-            body: { task_id: createdTask.id }
-          });
+        if (!createdTask.reminder_at) {
+          try {
+            const { error: reminderError } = await supabase.functions.invoke('send-task-reminder', {
+              body: { task_id: createdTask.id }
+            });
 
-          if (reminderError) throw reminderError;
+            if (reminderError) throw reminderError;
 
-          get().setAlertData({
-            message: `Recurring task "${createdTask.title}" is back to ${defaultStatus}. Reminder email sent.`,
-            type: 'success'
-          });
-        } catch (err: any) {
-          const message = await getReminderEmailErrorMessage(err);
-          console.warn('Recurring task email reminder failed:', err);
-          const isResendTestingLimit = message.includes('You can only send testing emails');
-          get().setAlertData({
-            message: isResendTestingLimit
-              ? 'Recurring task was created, but Resend is in testing mode. Verify a domain or send only to your Resend account email.'
-              : `Recurring task was created, but email failed: ${message}`,
-            type: 'error'
-          });
+            get().setAlertData({
+              message: `Recurring task "${createdTask.title}" is back to ${defaultStatus}. Reminder email sent.`,
+              type: 'success'
+            });
+          } catch (err: any) {
+            const message = await getReminderEmailErrorMessage(err);
+            console.warn('Recurring task email reminder failed:', err);
+            const isResendTestingLimit = message.includes('You can only send testing emails');
+            get().setAlertData({
+              message: isResendTestingLimit
+                ? 'Recurring task was created, but Resend is in testing mode. Verify a domain or send only to your Resend account email.'
+                : `Recurring task was created, but email failed: ${message}`,
+              type: 'error'
+            });
+          }
         }
       }
     } finally {
@@ -369,9 +375,9 @@ export const useStore = create<StoreState>((set, get) => ({
         
         // 1. Fetch data with a 10-second timeout to prevent 'infinite loading'
         const dataPromise = Promise.all([
-          supabase.from('profiles').select('id, email, full_name, job_title, user_roles(role)').eq('id', userId).maybeSingle(),
+          supabase.from('profiles').select('*, user_roles(role)').eq('id', userId).maybeSingle(),
           supabase.from('tasks').select('*'),
-          supabase.from('profiles').select('id, email, full_name, job_title, user_roles(role)'),
+          supabase.from('profiles').select('*, user_roles(role)'),
           supabase.from('categories').select('*').order('sort_order'),
           supabase.from('statuses').select('*').order('sort_order')
         ]);
@@ -394,9 +400,13 @@ export const useStore = create<StoreState>((set, get) => ({
             await supabase.from('user_roles').upsert({ user_id: userId, role: 'Worker' });
             
             // Refetch
-            const { data: finalP } = await supabase.from('profiles').select('id, email, full_name, job_title, user_roles(role)').eq('id', userId).single();
+            const { data: finalP } = await supabase
+              .from('profiles')
+              .select('*, user_roles(role)')
+              .eq('id', userId)
+              .single();
             profile = finalP;
-            const { data: allP } = await supabase.from('profiles').select('id, email, full_name, job_title, user_roles(role)');
+            const { data: allP } = await supabase.from('profiles').select('*, user_roles(role)');
             profiles = allP;
           }
         }
@@ -409,7 +419,12 @@ export const useStore = create<StoreState>((set, get) => ({
 
         // 3. Selective State Updates
         if (profile) set({ currentUser: { ...profile, role: getRole(profile) } as any });
-        if (tasks) set({ tasks });
+        if (tasks) {
+          set({
+            tasks: tasks.filter((task: Task) => !task.deleted_at),
+            archivedTasks: tasks.filter((task: Task) => Boolean(task.deleted_at))
+          });
+        }
         if (profiles) set({ profiles: profiles.map((p: any) => ({ ...p, role: getRole(p) })) });
         if (categories) set({ categories });
         if (statuses) set({ statuses });
@@ -455,7 +470,14 @@ export const useStore = create<StoreState>((set, get) => ({
       if (session) {
         await loadData(session.user.id);
       } else {
-        set({ currentUser: null, tasks: [], profiles: [], categories: [], statuses: [] });
+        set({
+          currentUser: null,
+          tasks: [],
+          archivedTasks: [],
+          profiles: [],
+          categories: [],
+          statuses: []
+        });
       }
     });
 
@@ -469,7 +491,7 @@ export const useStore = create<StoreState>((set, get) => ({
     // Realtime subscriptions (non-blocking)
     try {
       const handleProfileUpdate = () => {
-        supabase.from('profiles').select('id, email, full_name, job_title, user_roles(role)').then(({ data }) => {
+        supabase.from('profiles').select('*, user_roles(role)').then(({ data }) => {
           if (data) {
             const getRole = (p: any) => {
               if (Array.isArray(p.user_roles)) return p.user_roles[0]?.role || 'Worker';
@@ -490,15 +512,40 @@ export const useStore = create<StoreState>((set, get) => ({
         .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, (payload) => {
           set((state) => {
             const currentTasks = state.tasks;
+            const currentArchivedTasks = state.archivedTasks;
             if (payload.eventType === 'INSERT') {
-              if (currentTasks.some(t => t.id === payload.new.id)) return state;
-              return { tasks: [...currentTasks, payload.new as Task] };
+              const newTask = payload.new as Task;
+              if (newTask.deleted_at) {
+                if (currentArchivedTasks.some(task => task.id === newTask.id)) return state;
+                return { archivedTasks: [...currentArchivedTasks, newTask] };
+              }
+              if (currentTasks.some(task => task.id === newTask.id)) return state;
+              return { tasks: [...currentTasks, newTask] };
             }
             if (payload.eventType === 'UPDATE') {
-              return { tasks: currentTasks.map(t => t.id === payload.new.id ? (payload.new as Task) : t) };
+              const updatedTask = payload.new as Task;
+              if (updatedTask.deleted_at) {
+                return {
+                  tasks: currentTasks.filter(task => task.id !== updatedTask.id),
+                  archivedTasks: [
+                    ...currentArchivedTasks.filter(task => task.id !== updatedTask.id),
+                    updatedTask
+                  ]
+                };
+              }
+              return {
+                tasks: [
+                  ...currentTasks.filter(task => task.id !== updatedTask.id),
+                  updatedTask
+                ],
+                archivedTasks: currentArchivedTasks.filter(task => task.id !== updatedTask.id)
+              };
             }
             if (payload.eventType === 'DELETE') {
-              return { tasks: currentTasks.filter(t => t.id !== payload.old.id) };
+              return {
+                tasks: currentTasks.filter(task => task.id !== payload.old.id),
+                archivedTasks: currentArchivedTasks.filter(task => task.id !== payload.old.id)
+              };
             }
             return state;
           });
@@ -632,18 +679,49 @@ export const useStore = create<StoreState>((set, get) => ({
     }
   },
 
+  updateUserDepartment: async (userId, department) => {
+    const prevProfiles = get().profiles;
+    set(state => ({
+      profiles: state.profiles.map(profile => (
+        profile.id === userId ? { ...profile, department } : profile
+      )),
+      currentUser: state.currentUser?.id === userId
+        ? { ...state.currentUser, department }
+        : state.currentUser
+    }));
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ department })
+      .eq('id', userId);
+
+    if (error) {
+      set({
+        profiles: prevProfiles,
+        currentUser: prevProfiles.find(profile => profile.id === get().currentUser?.id) || get().currentUser
+      });
+      get().setAlertData({ message: `Error updating department: ${error.message}`, type: 'error' });
+    } else {
+      get().refreshData();
+    }
+  },
+
   sendTaskReminderEmail: async (taskId) => {
     const task = get().tasks.find(t => t.id === taskId);
-    const recipient = task
-      ? get().profiles.find(p => p.id === (task.is_self_task ? task.creator_id : task.assignee_id))
-      : null;
+    const recipients = task
+      ? get().profiles.filter(profile => (
+        task.is_self_task
+          ? profile.id === task.creator_id
+          : getTaskAssigneeIds(task).includes(profile.id)
+      ))
+      : [];
 
     if (!task) {
       get().setAlertData({ message: 'Task not found.', type: 'error' });
       return false;
     }
 
-    if (!recipient?.email) {
+    if (!recipients.some(recipient => recipient.email)) {
       get().setAlertData({ message: 'This task does not have a recipient email.', type: 'error' });
       return false;
     }
@@ -656,7 +734,7 @@ export const useStore = create<StoreState>((set, get) => ({
       if (error) throw error;
 
       get().setAlertData({
-        message: `Reminder email sent to ${recipient.full_name}.`,
+        message: `Reminder email sent to ${recipients.map(recipient => recipient.full_name).join(', ')}.`,
         type: 'success'
       });
       return true;
@@ -676,7 +754,7 @@ export const useStore = create<StoreState>((set, get) => ({
     const now = Date.now();
     const remindableTasks = tasks
       .filter(task => (
-        task.assignee_id === userId &&
+        isTaskAssignee(task, userId) &&
         task.status !== 'Done' &&
         !task.is_self_task &&
         !!task.end_date &&
@@ -703,7 +781,7 @@ export const useStore = create<StoreState>((set, get) => ({
     for (const task of remindableTasks) {
       try {
         const { error } = await supabase.functions.invoke('send-task-reminder', {
-          body: { task_id: task.id }
+          body: { task_id: task.id, recipient_id: userId }
         });
 
         if (error) throw error;
@@ -771,7 +849,12 @@ export const useStore = create<StoreState>((set, get) => ({
       
       set({ 
         profiles: get().profiles.filter(p => p.id !== userId),
-        tasks: get().tasks.map(t => t.assignee_id === userId ? { ...t, assignee_id: null } : t)
+        tasks: get().tasks.map(task => {
+          const assigneeIds = getTaskAssigneeIds(task).filter(id => id !== userId);
+          return isTaskAssignee(task, userId)
+            ? { ...task, assignee_id: assigneeIds[0] || null, assignee_ids: assigneeIds }
+            : task;
+        })
       });
       set({ alertData: { message: 'User successfully erased from workspace', type: 'success' } });
     } catch (err: any) {
@@ -780,17 +863,78 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   deleteTask: async (id) => {
-    const prevTasks = get().tasks;
-    set((state) => ({ tasks: state.tasks.filter(t => t.id !== id) }));
-    
-    const { error, data } = await supabase.from('tasks').delete().eq('id', id).select();
-    
-    if (error || !data || data.length === 0) {
-      set({ tasks: prevTasks }); // Revert
-      const msg = error ? error.message : "You do not have permission to delete this task or it doesn't exist.";
-      get().setAlertData({ message: "Error deleting task: " + msg, type: 'error' });
+    const task = get().tasks.find(candidate => candidate.id === id);
+    const currentUser = get().currentUser;
+    if (!task || !currentUser) return;
+
+    const archivedTask: Task = {
+      ...task,
+      deleted_at: new Date().toISOString(),
+      deleted_by: currentUser.id
+    };
+
+    set(state => ({
+      tasks: state.tasks.filter(candidate => candidate.id !== id),
+      archivedTasks: [
+        ...state.archivedTasks.filter(candidate => candidate.id !== id),
+        archivedTask
+      ]
+    }));
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({
+        deleted_at: archivedTask.deleted_at,
+        deleted_by: currentUser.id,
+        reminder_claimed_at: null
+      })
+      .eq('id', id)
+      .select()
+      .maybeSingle();
+
+    if (error || !data) {
+      set(state => ({
+        tasks: [...state.tasks.filter(candidate => candidate.id !== id), task],
+        archivedTasks: state.archivedTasks.filter(candidate => candidate.id !== id)
+      }));
+      const message = error?.message || "You do not have permission to archive this task.";
+      get().setAlertData({ message: `Error archiving task: ${message}`, type: 'error' });
     } else {
-      get().setAlertData({ message: "Task successfully deleted.", type: 'success' });
+      get().setAlertData({ message: 'Task moved to Archive.', type: 'success' });
+    }
+  },
+
+  restoreTask: async (id) => {
+    const task = get().archivedTasks.find(candidate => candidate.id === id);
+    if (!task) return;
+
+    const restoredTask: Task = {
+      ...task,
+      deleted_at: null,
+      deleted_by: null
+    };
+
+    set(state => ({
+      archivedTasks: state.archivedTasks.filter(candidate => candidate.id !== id),
+      tasks: [...state.tasks.filter(candidate => candidate.id !== id), restoredTask]
+    }));
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({ deleted_at: null, deleted_by: null })
+      .eq('id', id)
+      .select()
+      .maybeSingle();
+
+    if (error || !data) {
+      set(state => ({
+        tasks: state.tasks.filter(candidate => candidate.id !== id),
+        archivedTasks: [...state.archivedTasks.filter(candidate => candidate.id !== id), task]
+      }));
+      const message = error?.message || 'You do not have permission to restore this task.';
+      get().setAlertData({ message: `Error restoring task: ${message}`, type: 'error' });
+    } else {
+      get().setAlertData({ message: 'Task restored successfully.', type: 'success' });
     }
   },
 
@@ -799,7 +943,7 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   getVisibleTasks: () => {
-    const { tasks, currentUser } = get();
+    const { tasks, currentUser, profiles } = get();
     if (!currentUser) return [];
 
     return tasks.filter(task => {
@@ -809,13 +953,14 @@ export const useStore = create<StoreState>((set, get) => ({
       }
       
       if (currentUser.role === 'Admin') return true;
-      return (task.assignee_id === currentUser.id) ||
+      return isTaskAssignee(task, currentUser.id) ||
         (task.creator_id === currentUser.id) ||
-        (task.observers && task.observers.includes(currentUser.id));
+        (task.observers && task.observers.includes(currentUser.id)) ||
+        canViewTaskByDepartment(task, currentUser, profiles);
     });
   },
   getDashboardTasks: () => {
-    const { tasks, currentUser } = get();
+    const { tasks, currentUser, profiles } = get();
     if (!currentUser) return [];
 
     return tasks.filter(task => {
@@ -826,9 +971,10 @@ export const useStore = create<StoreState>((set, get) => ({
       if (currentUser.role === 'Admin') return true;
 
       // 3. Workers see public tasks they are involved in (assigned, created, or observing)
-      return (task.assignee_id === currentUser.id) ||
+      return isTaskAssignee(task, currentUser.id) ||
              (task.creator_id === currentUser.id) ||
-             (task.observers && task.observers.includes(currentUser.id));
+             (task.observers && task.observers.includes(currentUser.id)) ||
+             canViewTaskByDepartment(task, currentUser, profiles);
     });
   }
 }));

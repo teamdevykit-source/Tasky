@@ -1,5 +1,5 @@
 import React from 'react';
-import type { Task } from '../../../lib/supabase';
+import { getTaskAssigneeIds, isTaskAssignee, type Task } from '../../../lib/supabase';
 import { useStore } from '../../../store/useStore';
 import { Calendar, Eye, GripVertical, Lock, AlertTriangle, AlertCircle, Repeat } from 'lucide-react';
 import { formatDateTime } from '../../../lib/format';
@@ -12,7 +12,7 @@ export const TaskCard: React.FC<{ task: Task, onClick: () => void }> = ({ task, 
   const statuses = useStore(s => s.statuses);
   const categories = useStore(s => s.categories);
   
-  const assignee = profiles.find(u => u.id === task.assignee_id);
+  const assignees = profiles.filter(profile => getTaskAssigneeIds(task).includes(profile.id));
   
   const isObserver = task.observers?.includes(currentUser?.id || '') && currentUser?.role !== 'Admin';
   
@@ -21,13 +21,18 @@ export const TaskCard: React.FC<{ task: Task, onClick: () => void }> = ({ task, 
   // 2. If regular task: Creator, Assignee, or Admin can edit/drag.
   const canEditStatus = task.is_self_task 
     ? (currentUser?.id === task.creator_id)
-    : (!isObserver && (currentUser?.role === 'Admin' || currentUser?.id === task.assignee_id || currentUser?.id === task.creator_id));
+    : (!isObserver && (
+      currentUser?.role === 'Admin' ||
+      isTaskAssignee(task, currentUser?.id) ||
+      currentUser?.id === task.creator_id
+    ));
   
   const isLocked = !canEditStatus;
 
   const currentStatus = statuses.find(s => s.name === task.status);
   const statusColor = currentStatus?.color || '#94a3b8';
   const categoryColor = categories.find(c => c.name === task.category)?.color || '#64748b';
+  const isHighPriority = task.priority === 'High';
 
   const isOverdue = React.useMemo(() => {
     if (!task.end_date || task.status === 'Done') return false;
@@ -57,12 +62,22 @@ export const TaskCard: React.FC<{ task: Task, onClick: () => void }> = ({ task, 
 
   return (
     <div 
-      className={`task-card ${isOverdue || isUrgent ? 'urgent-pulse' : ''}`} 
+      className={`task-card ${isOverdue || isUrgent ? 'urgent-pulse' : ''} ${isHighPriority ? 'high-priority-task' : ''}`}
       style={{ 
-        borderLeft: `3px solid ${statusColor}`, 
-        border: isOverdue ? '1.5px solid var(--danger)' : isUrgent ? '1.5px solid #f87171' : undefined,
+        border: isHighPriority
+          ? '1.5px solid rgba(239, 68, 68, 0.72)'
+          : isOverdue
+            ? '1.5px solid var(--danger)'
+            : isUrgent
+              ? '1.5px solid #f87171'
+              : undefined,
+        borderLeft: isHighPriority ? '4px solid #ef4444' : `3px solid ${statusColor}`,
         cursor: isLocked ? 'pointer' : 'grab',
-        boxShadow: isUrgent || isOverdue ? '0 0 12px rgba(239, 68, 68, 0.15)' : 'var(--shadow-sm)'
+        boxShadow: isHighPriority
+          ? '0 0 0 1px rgba(239, 68, 68, 0.16), 0 10px 28px rgba(239, 68, 68, 0.16)'
+          : isUrgent || isOverdue
+            ? '0 0 12px rgba(239, 68, 68, 0.15)'
+            : 'var(--shadow-sm)'
       }}
       draggable={!isLocked}
       onDragStart={handleDragStart}
@@ -82,6 +97,15 @@ export const TaskCard: React.FC<{ task: Task, onClick: () => void }> = ({ task, 
           </span>
         ) : <span />}
         <div style={{ display: 'flex', gap: '0.375rem', alignItems: 'center' }}>
+          {isHighPriority && (
+            <div
+              title="HIGH PRIORITY"
+              className="high-priority-alert"
+            >
+              <AlertTriangle size={12} />
+              High
+            </div>
+          )}
           {isOverdue && <div title="OVERDUE" style={{ color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '0.2rem', fontSize: '0.6rem', fontWeight: 800 }}><AlertTriangle size={12}/></div>}
           {isUrgent && <div title="ENDS SOON ( < 1h )" style={{ color: '#f87171', display: 'flex', alignItems: 'center', gap: '0.2rem', fontSize: '0.6rem', fontWeight: 800 }}><AlertCircle size={12}/></div>}
           {task.is_self_task && <Lock size={11} style={{ color: 'var(--primary)', opacity: 0.8 }} />}
@@ -130,15 +154,27 @@ export const TaskCard: React.FC<{ task: Task, onClick: () => void }> = ({ task, 
             {!task.is_self_task && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                 <span style={{ fontSize: '0.55rem', fontWeight: 800, color: 'var(--text-4)', width: '32px' }}>OWNER</span>
-                {assignee ? (
-                  <>
-                    <div className="avatar" style={{ width: '18px', height: '18px', fontSize: '0.5rem', borderWidth: '1.5px' }}>
-                      {assignee.full_name.charAt(0).toUpperCase()}
+                {assignees.length > 0 ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <div style={{ display: 'flex' }}>
+                      {assignees.slice(0, 3).map((assignee, index) => (
+                        <div
+                          key={assignee.id}
+                          className="avatar"
+                          title={assignee.full_name}
+                          style={{
+                            width: '18px', height: '18px', fontSize: '0.5rem', borderWidth: '1.5px',
+                            marginLeft: index === 0 ? 0 : '-5px'
+                          }}
+                        >
+                          {assignee.full_name.charAt(0).toUpperCase()}
+                        </div>
+                      ))}
                     </div>
                     <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-2)' }}>
-                      {assignee.full_name.split(' ')[0]}
+                      {assignees.length === 1 ? assignees[0].full_name.split(' ')[0] : `${assignees.length} people`}
                     </span>
-                  </>
+                  </div>
                 ) : <span style={{ fontSize: '0.65rem', fontStyle: 'italic', color: 'var(--text-4)' }}>Unassigned</span>}
               </div>
             )}

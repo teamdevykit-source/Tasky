@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../../../store/useStore';
+import { isTaskAssignee } from '../../../lib/supabase';
 import { Plus, Trash2, Settings, Users, Layers, Tag, ShieldCheck, Mail, Send } from 'lucide-react';
 import { ConfirmationModal } from '../../../components/Shared/ConfirmationModal';
 import { AppSelect } from '../../../components/Shared/AppSelect';
+import type { Department } from '../../../lib/supabase';
 
 export const AdminSettings: React.FC = () => {
   const currentUser = useStore(s => s.currentUser);
@@ -10,6 +12,7 @@ export const AdminSettings: React.FC = () => {
   const tasks = useStore(s => s.tasks);
   const updateUserRole = useStore(s => s.updateUserRole);
   const updateUserJobTitle = useStore(s => s.updateUserJobTitle);
+  const updateUserDepartment = useStore(s => s.updateUserDepartment);
   const categories = useStore(s => s.categories);
   const addCategory = useStore(s => s.addCategory);
   const deleteCategory = useStore(s => s.deleteCategory);
@@ -56,6 +59,7 @@ export const AdminSettings: React.FC = () => {
   }
 
   const ROLES = ['Admin', 'Worker'];
+  const DEPARTMENTS: Department[] = ['Operations', 'Finance', 'Top Management'];
 
   const handleAddCategory = () => {
     if (!newCategory.trim()) return;
@@ -80,7 +84,7 @@ export const AdminSettings: React.FC = () => {
   const getRemindableTaskCount = (userId: string) => {
     const now = Date.now();
     return tasks.filter(task => (
-      task.assignee_id === userId &&
+      isTaskAssignee(task, userId) &&
       task.status !== 'Done' &&
       !task.is_self_task &&
       !!task.end_date &&
@@ -166,6 +170,7 @@ export const AdminSettings: React.FC = () => {
                   <th>User</th>
                   <th>Email</th>
                   <th>Job Title (Label)</th>
+                  <th>Department</th>
                   <th>Role</th>
                   <th>Reminder</th>
                   <th style={{ width: '40px' }}></th>
@@ -219,6 +224,23 @@ export const AdminSettings: React.FC = () => {
                         style={{ 
                           width: '130px'
                         }}
+                      />
+                    </td>
+                    <td>
+                      <AppSelect
+                        value={user.department || ''}
+                        onChange={value => updateUserDepartment(user.id, value as Department)}
+                        placeholder="Assign department"
+                        options={DEPARTMENTS.map(department => ({
+                          value: department,
+                          label: department,
+                          color: department === 'Top Management'
+                            ? '#ef4444'
+                            : department === 'Finance'
+                              ? '#22c55e'
+                              : '#3b82f6'
+                        }))}
+                        style={{ width: '165px' }}
                       />
                     </td>
                     <td>

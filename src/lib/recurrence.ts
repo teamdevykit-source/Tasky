@@ -73,6 +73,7 @@ export const buildRecurringTaskOccurrence = (template: Task, occurrenceAt: Date,
   const occurrenceStart = new Date(occurrenceAt);
   let startDate: string | undefined;
   let endDate: string | undefined;
+  let reminderAt: string | undefined;
 
   if (originalStart && !Number.isNaN(originalStart.getTime())) {
     startDate = occurrenceStart.toISOString();
@@ -87,17 +88,33 @@ export const buildRecurringTaskOccurrence = (template: Task, occurrenceAt: Date,
     }
   }
 
+  const originalReminder = template.reminder_at ? new Date(template.reminder_at) : null;
+  if (
+    originalReminder &&
+    originalEnd &&
+    endDate &&
+    !Number.isNaN(originalReminder.getTime()) &&
+    !Number.isNaN(originalEnd.getTime())
+  ) {
+    const reminderLeadTime = Math.max(originalEnd.getTime() - originalReminder.getTime(), 0);
+    reminderAt = new Date(new Date(endDate).getTime() - reminderLeadTime).toISOString();
+  }
+
   return {
     title: template.title,
     description: template.description,
     assignee_id: template.assignee_id,
+    assignee_ids: template.assignee_ids || (template.assignee_id ? [template.assignee_id] : []),
     creator_id: template.creator_id,
     status: defaultStatus,
+    priority: template.priority || 'Medium',
     category: template.category,
     observers: template.observers || [],
     is_self_task: template.is_self_task || false,
     start_date: startDate,
     end_date: endDate,
+    reminder_at: reminderAt,
+    reminder_sent_at: undefined,
     is_recurring: false,
     recurrence_type: undefined,
     recurrence_time: undefined,

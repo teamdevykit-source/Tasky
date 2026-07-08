@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useStore } from '../../../store/useStore';
+import { canViewTaskByDepartment, getTaskAssigneeIds, isTaskAssignee } from '../../../lib/supabase';
 import { TaskCard } from './TaskCard';
 import { Search, Filter, ArrowUpDown, Clock, User as UserIcon, Tag, LayoutGrid, ListChecks, Lock, AlertTriangle, AlertCircle, Plus } from 'lucide-react';
 import { formatDateTime } from '../../../lib/format';
@@ -29,11 +30,12 @@ export const TaskBoard: React.FC<{
       }
       
       if (currentUser.role === 'Admin') return true;
-      return (task.assignee_id === currentUser.id) || 
+      return isTaskAssignee(task, currentUser.id) ||
              (task.creator_id === currentUser.id) ||
-             (task.observers && task.observers.includes(currentUser.id));
+             (task.observers && task.observers.includes(currentUser.id)) ||
+             canViewTaskByDepartment(task, currentUser, profiles);
     });
-  }, [tasks, currentUser]);
+  }, [tasks, currentUser, profiles]);
 
   // Filter States
   const [searchQuery, setSearchQuery] = useState('');
@@ -61,7 +63,9 @@ export const TaskBoard: React.FC<{
       const matchesStatus = filterStatus === 'All' || t.status === filterStatus;
       const matchesCategory = filterCategory === 'All' || t.category === filterCategory;
       const matchesAssignee = filterAssignee === 'All' ||
-        (filterAssignee === 'unassigned' ? !t.assignee_id : t.assignee_id === filterAssignee);
+        (filterAssignee === 'unassigned'
+          ? getTaskAssigneeIds(t).length === 0
+          : isTaskAssignee(t, filterAssignee));
       const matchesSelf = 
         filterSelfTasks === 'all' ? true :
         filterSelfTasks === 'only' ? t.is_self_task === true :
@@ -236,7 +240,7 @@ export const TaskBoard: React.FC<{
                 <ListChecks size={18} style={{ color: 'var(--primary)' }} />
               </div>
               <div>
-                <h1 style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--text-1)' }}>Scrum Table</h1>
+                <h1 style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--text-1)' }}>List View</h1>
                 <p style={{ color: 'var(--text-4)', fontSize: '0.85rem' }}>Analytical overview of all tasks and operations.</p>
               </div>
             </div>
@@ -262,21 +266,31 @@ export const TaskBoard: React.FC<{
             </thead>
             <tbody>
               {filteredTasks.map(task => {
-                const assignee = profiles.find(u => u.id === task.assignee_id);
+                const assignees = profiles.filter(profile => getTaskAssigneeIds(task).includes(profile.id));
                 const isObs = task.observers?.includes(currentUser.id) && currentUser.role !== 'Admin';
-                const canEdit = !isObs && (currentUser.role === 'Admin' || currentUser.id === task.assignee_id || currentUser.id === task.creator_id);
+                const canEdit = !isObs && (
+                  currentUser.role === 'Admin' ||
+                  isTaskAssignee(task, currentUser.id) ||
+                  currentUser.id === task.creator_id
+                );
                 const catColor = categories.find(c => c.name === task.category)?.color || '#64748b';
                 const statColor = statuses.find(s => s.name === task.status)?.color || '#64748b';
 
                 return (
                   <tr 
                     key={task.id} 
-                    className="scrum-row" 
+                    className={`scrum-row ${task.priority === 'High' ? 'high-priority-row' : ''}`}
                     onClick={() => onSelectTask(task.id)}
                   >
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         {task.is_self_task && <Lock size={12} style={{ color: 'var(--primary)', opacity: 0.8 }} />}
+                        {task.priority === 'High' && (
+                          <span className="high-priority-alert">
+                            <AlertTriangle size={12} />
+                            High
+                          </span>
+                        )}
                         <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-1)' }}>{task.title}</div>
                       </div>
                     </td>
@@ -334,10 +348,26 @@ export const TaskBoard: React.FC<{
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                           <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-4)', width: '40px' }}>OWNER</span>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                            <div className="avatar" style={{ width: '20px', height: '20px', fontSize: '0.55rem' }}>
-                              {assignee?.full_name.charAt(0).toUpperCase() || '?'}
+                            <div style={{ display: 'flex' }}>
+                              {assignees.slice(0, 3).map((assignee, index) => (
+                                <div
+                                  key={assignee.id}
+                                  className="avatar"
+                                  title={assignee.full_name}
+                                  style={{
+                                    width: '20px', height: '20px', fontSize: '0.55rem',
+                                    marginLeft: index === 0 ? 0 : '-5px'
+                                  }}
+                                >
+                                  {assignee.full_name.charAt(0).toUpperCase()}
+                                </div>
+                              ))}
                             </div>
-                            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-1)' }}>{assignee?.full_name || 'Unassigned'}</span>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-1)' }}>
+                              {assignees.length > 0
+                                ? assignees.map(assignee => assignee.full_name).join(', ')
+                                : 'Unassigned'}
+                            </span>
                           </div>
                         </div>
                         {/* Observers */}
@@ -417,7 +447,7 @@ export const TaskBoard: React.FC<{
               <LayoutGrid size={18} style={{ color: 'var(--primary)' }} />
             </div>
             <div>
-              <h1 style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--text-1)' }}>Kanban Board</h1>
+              <h1 style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--text-1)' }}>Board View</h1>
               <p style={{ color: 'var(--text-4)', fontSize: '0.85rem' }}>Drag and drop tasks between status columns.</p>
             </div>
           </div>

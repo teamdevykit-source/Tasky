@@ -21,14 +21,14 @@ export const Header: React.FC<{ onOpenCreateModal: () => void }> = ({ onOpenCrea
             onClick={() => setViewMode('kanban')}
           >
             <KanbanSquare size={14} style={{ display: 'inline', marginRight: '4px' }}/>
-            Kanban
+            Board View
           </button>
           <button 
             className={`toggle-btn ${viewMode === 'scrum' ? 'active' : ''}`} 
             onClick={() => setViewMode('scrum')}
           >
             <List size={14} style={{ display: 'inline', marginRight: '4px' }}/>
-            Scrum
+            List View
           </button>
           {currentUser.role === 'Admin' && (
             <button 

@@ -1,10 +1,15 @@
 import React, { useMemo, useState } from 'react';
-import { CalendarClock, CheckCircle2, Clock, Lock, Repeat, Search, ShieldCheck, User as UserIcon } from 'lucide-react';
+import { AlertTriangle, CalendarClock, CheckCircle2, Clock, Lock, Repeat, Search, ShieldCheck, User as UserIcon } from 'lucide-react';
 import { AppDateTimePicker } from '../../../components/Shared/AppDateTimePicker';
 import { AppSelect } from '../../../components/Shared/AppSelect';
 import { formatDateTime, formatTime12Hour } from '../../../lib/format';
 import { computeNextRecurrence } from '../../../lib/recurrence';
-import type { RecurrenceType, Task } from '../../../lib/supabase';
+import {
+  getTaskAssigneeIds,
+  isTaskAssignee,
+  type RecurrenceType,
+  type Task
+} from '../../../lib/supabase';
 import { useStore } from '../../../store/useStore';
 
 const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -12,7 +17,7 @@ const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Fri
 const getVisibleTask = (task: Task, currentUserId: string, role: string) => {
   if (task.is_self_task) return task.creator_id === currentUserId;
   if (role === 'Admin') return true;
-  return task.assignee_id === currentUserId ||
+  return isTaskAssignee(task, currentUserId) ||
     task.creator_id === currentUserId ||
     task.observers?.includes(currentUserId);
 };
@@ -89,7 +94,7 @@ export const RecurringTasksView: React.FC<{ onSelectTask: (id: string | null) =>
         const matchesScope = scope === 'all' ||
           (scope === 'private' ? row.template.is_self_task : !row.template.is_self_task);
         const matchesPerson = personFilter === 'all' ||
-          row.template.assignee_id === personFilter ||
+          isTaskAssignee(row.template, personFilter) ||
           row.template.creator_id === personFilter ||
           row.template.observers?.includes(personFilter);
         const matchesCategory = categoryFilter === 'all' ||
@@ -124,7 +129,7 @@ export const RecurringTasksView: React.FC<{ onSelectTask: (id: string | null) =>
     if (task.is_self_task) return task.creator_id === currentUser.id;
     return currentUser.role === 'Admin' ||
       task.creator_id === currentUser.id ||
-      task.assignee_id === currentUser.id;
+      isTaskAssignee(task, currentUser.id);
   };
 
   const updateRecurringSchedule = async (
@@ -328,7 +333,7 @@ export const RecurringTasksView: React.FC<{ onSelectTask: (id: string | null) =>
       <div style={{ display: 'grid', gap: '1rem' }}>
         {recurringRows.map(row => {
           const template = row.template;
-          const assignee = profiles.find(p => p.id === template.assignee_id);
+          const assignees = profiles.filter(profile => getTaskAssigneeIds(template).includes(profile.id));
           const creator = profiles.find(p => p.id === template.creator_id);
           const statusColor = statuses.find(s => s.name === (row.latestOccurrence?.status || template.status))?.color || '#34d399';
           const categoryColor = categories.find(c => c.name === template.category)?.color || '#64748b';
@@ -353,10 +358,16 @@ export const RecurringTasksView: React.FC<{ onSelectTask: (id: string | null) =>
                 cursor: 'pointer',
                 textAlign: 'left'
               }}
-              className="recurring-task-row"
+              className={`recurring-task-row ${template.priority === 'High' ? 'high-priority-row' : ''}`}
             >
               <div className="recurring-task-main">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+                  {template.priority === 'High' && (
+                    <span className="high-priority-alert">
+                      <AlertTriangle size={12} />
+                      High priority
+                    </span>
+                  )}
                   {template.category && (
                     <span style={{
                       fontSize: '0.62rem',
@@ -378,7 +389,11 @@ export const RecurringTasksView: React.FC<{ onSelectTask: (id: string | null) =>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.76rem', color: 'var(--text-4)' }}>
                   <UserIcon size={13} />
-                  <span>{template.is_self_task ? creator?.full_name || 'Private' : assignee?.full_name || 'Unassigned'}</span>
+                  <span>
+                    {template.is_self_task
+                      ? creator?.full_name || 'Private'
+                      : assignees.map(assignee => assignee.full_name).join(', ') || 'Unassigned'}
+                  </span>
                 </div>
               </div>
 

@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../../../store/useStore';
 import { TaskCard } from './TaskCard';
-import { Search, ArrowUpDown, Lock, Plus, ListChecks, LayoutGrid } from 'lucide-react';
+import { Search, ArrowUpDown, Lock, Plus, ListChecks, LayoutGrid, AlertTriangle } from 'lucide-react';
 import { CreateTaskModal } from './CreateTaskModal';
 import { AppSelect } from '../../../components/Shared/AppSelect';
 
@@ -200,14 +200,22 @@ export const MyTasksView: React.FC<{ onSelectTask: (id: string | null) => void }
                     borderRadius: 'var(--radius-lg)', cursor: 'pointer', transition: 'var(--transition)',
                     borderBottom: '1px solid var(--border-subtle)'
                   }}
-                  className="hover-surface-2"
+                  className={`hover-surface-2 ${task.priority === 'High' ? 'high-priority-row' : ''}`}
                 >
                   <div style={{ 
                     width: '10px', height: '10px', borderRadius: '50%', 
                     background: statuses.find(s => s.name === task.status)?.color || 'var(--primary)' 
                   }} />
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-1)' }}>{task.title}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                      {task.priority === 'High' && (
+                        <span className="high-priority-alert">
+                          <AlertTriangle size={12} />
+                          High
+                        </span>
+                      )}
+                      <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-1)' }}>{task.title}</div>
+                    </div>
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-4)' }}>{task.status}</div>
                   </div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-4)' }}>

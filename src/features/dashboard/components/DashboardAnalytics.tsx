@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { useStore } from '../../../store/useStore';
 import { BarChart, Activity, Clock, Users, Zap, LayoutDashboard, Target, ShieldCheck, ChevronDown, ChevronUp, Mail } from 'lucide-react';
+import { getTaskAssigneeIds, isTaskAssignee } from '../../../lib/supabase';
 
 export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = ({ onOpenCreateModal }) => {
   const [expandedRole, setExpandedRole] = React.useState<'Admin' | 'Worker' | null>(null);
@@ -54,9 +55,9 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
       });
     }
     
-    const unassigned = visibleTasks.filter((t: any) => !t.assignee_id).length;
+    const unassigned = visibleTasks.filter(task => getTaskAssigneeIds(task).length === 0).length;
     
-    const myTasks = visibleTasks.filter((t: any) => t.assignee_id === currentUser?.id).length;
+    const myTasks = visibleTasks.filter(task => isTaskAssignee(task, currentUser?.id)).length;
 
     const byRole = {
       Admin: profiles.filter(p => p.role === 'Admin').length,

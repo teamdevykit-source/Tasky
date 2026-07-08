@@ -1,6 +1,6 @@
 import React from 'react';
 import { useStore } from '../../store/useStore';
-import { KanbanSquare, List, Settings, LogOut, Zap, Sun, Moon, X, LayoutDashboard, Lock, Bell, Repeat } from 'lucide-react';
+import { Archive, KanbanSquare, List, Settings, LogOut, Zap, Sun, Moon, X, LayoutDashboard, Lock, Bell, Repeat } from 'lucide-react';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -14,6 +14,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const logout = useStore(s => s.logout);
   const theme = useStore(s => s.theme);
   const toggleTheme = useStore(s => s.toggleTheme);
+  const archivedTaskCount = useStore(state => state.archivedTasks.length);
   
   if (!currentUser) return null;
   const getDashboardTasks = useStore(s => s.getDashboardTasks);
@@ -149,7 +150,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             onClick={() => setViewMode('kanban')}
           >
             <KanbanSquare size={17} />
-            <span>Kanban Board</span>
+            <span>Board View</span>
           </button>
           
           <button 
@@ -157,17 +158,39 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             onClick={() => setViewMode('scrum')}
           >
             <List size={17} />
-            <span>Scrum Table</span>
+            <span>List View</span>
           </button>
 
           {currentUser.role === 'Admin' && (
-            <button 
-              className={`nav-item ${viewMode === 'settings' ? 'active' : ''}`}
-              onClick={() => setViewMode('settings')}
-            >
-              <Settings size={17} />
-              <span>Settings</span>
-            </button>
+            <>
+              <button
+                className={`nav-item ${viewMode === 'settings' ? 'active' : ''}`}
+                onClick={() => setViewMode('settings')}
+              >
+                <Settings size={17} />
+                <span>Settings</span>
+              </button>
+              <button
+                className={`nav-item ${viewMode === 'archive' ? 'active' : ''}`}
+                onClick={() => setViewMode('archive')}
+              >
+                <Archive size={17} />
+                <span>Archive</span>
+                {archivedTaskCount > 0 && (
+                  <span className="nav-pill nav-pill-count" style={{
+                    marginLeft: 'auto',
+                    padding: '0.1rem 0.4rem',
+                    borderRadius: 'var(--radius-full)',
+                    background: 'var(--surface-3)',
+                    color: 'var(--text-2)',
+                    fontSize: '0.65rem',
+                    fontWeight: 700
+                  }}>
+                    {archivedTaskCount}
+                  </span>
+                )}
+              </button>
+            </>
           )}
         </nav>
       </div>

@@ -14,12 +14,14 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
 
 // Types
 export type UserRole = 'Admin' | 'Worker';
+export type Department = 'Operations' | 'Finance' | 'Top Management';
 
 export interface Profile {
   id: string;
   email: string;
   full_name: string;
   job_title?: string;
+  department?: Department | null;
   role: UserRole;
 }
 
@@ -38,20 +40,27 @@ export interface Status {
 }
 
 export type RecurrenceType = 'daily' | 'weekly' | 'monthly';
+export type TaskPriority = 'High' | 'Medium' | 'Low';
 
 export interface Task {
   id: string;
   title: string;
   description: string;
   assignee_id: string | null;
+  assignee_ids?: string[];
   creator_id: string;
   status: string;
+  priority?: TaskPriority;
   category: string | null;
   observers: string[];
   is_self_task?: boolean;
   start_date?: string;
   end_date?: string;
+  reminder_at?: string | null;
+  reminder_sent_at?: string | null;
   created_at: string;
+  deleted_at?: string | null;
+  deleted_by?: string | null;
   // Recurrence fields
   is_recurring?: boolean;
   recurrence_type?: RecurrenceType | null;
@@ -60,3 +69,36 @@ export interface Task {
   next_recurrence_at?: string | null;
   parent_task_id?: string | null;
 }
+
+export const getTaskAssigneeIds = (
+  task: Pick<Task, 'assignee_id' | 'assignee_ids'>
+): string[] => {
+  if (task.assignee_ids?.length) return [...new Set(task.assignee_ids)];
+  return task.assignee_id ? [task.assignee_id] : [];
+};
+
+export const isTaskAssignee = (
+  task: Pick<Task, 'assignee_id' | 'assignee_ids'>,
+  userId?: string | null
+) => Boolean(userId && getTaskAssigneeIds(task).includes(userId));
+
+export const canViewTaskByDepartment = (
+  task: Task,
+  currentUser: Profile,
+  profiles: Profile[]
+) => {
+  if (currentUser.department !== 'Operations' && currentUser.department !== 'Finance') {
+    return false;
+  }
+
+  const participantIds = new Set([
+    task.creator_id,
+    ...getTaskAssigneeIds(task),
+    ...(task.observers || [])
+  ]);
+
+  return !profiles.some(profile => (
+    profile.department === 'Top Management' &&
+    participantIds.has(profile.id)
+  ));
+};
