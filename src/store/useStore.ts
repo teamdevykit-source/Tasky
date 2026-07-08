@@ -1032,9 +1032,7 @@ export const useStore = create<StoreState>((set, get) => ({
       if (error) throw error;
 
       get().setAlertData({
-        message: data?.testingMode
-          ? `Report sent to ${data.testingRecipient}. Resend is in testing mode, so ${data.skippedRecipientCount || 0} other admin${data.skippedRecipientCount === 1 ? '' : 's'} were skipped until a sending domain is verified.`
-          : `Report sent to ${data?.recipientCount || 'all'} admin${data?.recipientCount === 1 ? '' : 's'} via email.`,
+        message: `Report sent to ${data?.recipientCount || 'all'} admin${data?.recipientCount === 1 ? '' : 's'} via email.`,
         type: 'success'
       });
       return true;

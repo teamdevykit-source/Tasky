@@ -1,5 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.101.1';
 import * as XLSX from 'npm:xlsx@0.18.5';
+// @deno-types="npm:@types/nodemailer@6.4.17"
+import nodemailer from 'npm:nodemailer@6.9.16';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -41,6 +43,22 @@ type UserRoleRecord = {
   role: 'Admin' | 'Worker';
 };
 
+type MailAttachment = {
+  filename: string;
+  content: string;
+  encoding?: 'base64';
+  contentType?: string;
+};
+
+type MailMessage = {
+  from?: string;
+  to: string[];
+  subject: string;
+  text: string;
+  html: string;
+  attachments?: MailAttachment[];
+};
+
 const jsonResponse = (body: unknown, status = 200) => (
   new Response(JSON.stringify(body), {
     status,
@@ -72,27 +90,68 @@ const getSupabaseErrorMessage = (label: string, error: any) => (
   error ? `${label}: ${error.message || 'Unknown database error'}` : null
 );
 
-const getResendTestingEmail = (message: string) => (
-  message.match(/own email address \(([^)]+)\)/i)?.[1]?.trim().toLowerCase() || null
-);
-
 const getAssigneeIds = (task: TaskRecord) => (
   task.assignee_ids?.length
     ? task.assignee_ids
     : (task.assignee_id ? [task.assignee_id] : [])
 );
 
+const getSmtpConfig = () => {
+  const host = Deno.env.get('SMTP_HOST');
+  const port = Number(Deno.env.get('SMTP_PORT') || '587');
+  const user = Deno.env.get('SMTP_USER');
+  const pass = Deno.env.get('SMTP_PASS') || Deno.env.get('APP_PASSWORD');
+  const from = Deno.env.get('SMTP_FROM') || Deno.env.get('MAIL_FROM') || user;
+  const secureEnv = Deno.env.get('SMTP_SECURE');
+  const secure = secureEnv
+    ? ['1', 'true', 'yes'].includes(secureEnv.toLowerCase())
+    : port === 465;
+
+  if (!host || !port || !user || !pass || !from) {
+    throw new Error(
+      'SMTP mailer is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS or APP_PASSWORD, and SMTP_FROM.'
+    );
+  }
+
+  return { host, port, secure, user, pass, from };
+};
+
+const sendSmtpMail = async (message: MailMessage) => {
+  const smtp = getSmtpConfig();
+  const transporter = nodemailer.createTransport({
+    host: smtp.host,
+    port: smtp.port,
+    secure: smtp.secure,
+    auth: {
+      user: smtp.user,
+      pass: smtp.pass
+    }
+  });
+
+  const info = await transporter.sendMail({
+    from: message.from || smtp.from,
+    to: message.to,
+    subject: message.subject,
+    text: message.text,
+    html: message.html,
+    attachments: message.attachments?.map(attachment => ({
+      filename: attachment.filename,
+      content: attachment.content,
+      encoding: attachment.encoding,
+      contentType: attachment.contentType
+    }))
+  });
+
+  return { messageId: info.messageId };
+};
+
 const sendReminderEmail = async ({
   supabase,
-  resendApiKey,
-  mailFrom,
   appUrl,
   task,
   recipientId
 }: {
   supabase: any;
-  resendApiKey: string;
-  mailFrom: string;
   appUrl: string;
   task: TaskRecord;
   recipientId?: string;
@@ -163,34 +222,25 @@ const sendReminderEmail = async ({
     </div>
   `;
 
-  const resendResponse = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${resendApiKey}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      from: mailFrom,
+  try {
+    const result = await sendSmtpMail({
       to: emailableRecipients.map((recipient: any) => recipient.email),
       subject,
       text,
       html
-    })
-  });
+    });
 
-  const resendBody = await resendResponse.json().catch(() => ({}));
-  if (!resendResponse.ok) {
-    const providerMessage = resendBody?.message || resendBody?.error || 'Unknown provider error';
+    return {
+      recipients: emailableRecipients.map((recipient: any) => recipient.email),
+      messageId: result.messageId
+    };
+  } catch (error: any) {
+    const providerMessage = error.message || 'Unknown provider error';
     throw new Error(`Mail provider rejected the reminder email: ${providerMessage}`);
   }
-
-  return {
-    recipients: emailableRecipients.map((recipient: any) => recipient.email),
-    messageId: resendBody.id
-  };
 };
 
-const sendReportEmail = async (supabase: any, resendApiKey: string, mailFrom: string, appUrl: string) => {
+const sendReportEmail = async (supabase: any, appUrl: string) => {
   const [
     profilesResult,
     tasksResult,
@@ -287,55 +337,33 @@ const sendReportEmail = async (supabase: any, resendApiKey: string, mailFrom: st
   ];
 
   const sendToAdmins = async (recipients: string[]) => {
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${resendApiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        from: mailFrom,
-        to: recipients,
-        subject: `Employee Summary Report - ${now}`,
-        text: `Hello,\n\nPlease find attached the employee summary report for ${now}.\n\nGenerated by El Meraki Ops`,
-        html: `<div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.6;">
+    const result = await sendSmtpMail({
+      to: recipients,
+      subject: `Employee Summary Report - ${now}`,
+      text: `Hello,\n\nPlease find attached the employee summary report for ${now}.\n\nGenerated by El Meraki Ops`,
+      html: `<div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.6;">
         <h2>Employee Summary Report</h2>
         <p>Hello,</p>
         <p>Please find attached the employee summary report for <strong>${now}</strong>.</p>
         <p><a href="${escapeHtml(appUrl)}" style="color: #4b46d8;">Open the Tasky workspace</a></p>
         <p>Best regards,<br />El Meraki Ops</p>
       </div>`,
-        attachments: [{ filename: `employee_summary_${now}.xlsx`, content: base64 }]
-      })
+      attachments: [{
+        filename: `employee_summary_${now}.xlsx`,
+        content: base64,
+        encoding: 'base64',
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      }]
     });
 
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const message = body?.message || body?.error || `HTTP ${res.status}`;
-      throw new Error(message);
-    }
-
-    return body;
+    return result;
   };
 
   try {
-    const body = await sendToAdmins(adminEmails);
-    return { recipientCount: adminEmails.length, messageId: body.id };
+    const result = await sendToAdmins(adminEmails);
+    return { recipientCount: adminEmails.length, messageId: result.messageId };
   } catch (error: any) {
     const providerMessage = error.message || 'Unknown';
-    const testingEmail = getResendTestingEmail(providerMessage);
-
-    if (testingEmail && adminEmails.map(email => email.toLowerCase()).includes(testingEmail)) {
-      const body = await sendToAdmins([testingEmail]);
-      return {
-        recipientCount: 1,
-        messageId: body.id,
-        testingMode: true,
-        testingRecipient: testingEmail,
-        skippedRecipientCount: adminEmails.length - 1
-      };
-    }
-
     throw new Error(`Mail provider rejected the report: ${providerMessage}`);
   }
 };
@@ -358,17 +386,11 @@ Deno.serve(async (req) => {
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  const resendApiKey = Deno.env.get('RESEND_API_KEY');
   const cronSecret = Deno.env.get('CRON_SECRET');
-  const mailFrom = Deno.env.get('MAIL_FROM') || 'El Meraki Ops <onboarding@resend.dev>';
   const appUrl = Deno.env.get('APP_URL') || 'https://xemslalhsxdqgzyfdtqf.supabase.co';
 
   if (!supabaseUrl || !serviceRoleKey) {
     return jsonResponse({ error: 'Supabase function secrets are not configured.' }, 500);
-  }
-
-  if (!resendApiKey) {
-    return jsonResponse({ error: 'RESEND_API_KEY is not configured.' }, 500);
   }
 
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
@@ -395,7 +417,7 @@ Deno.serve(async (req) => {
 
     for (const task of (dueTasks || []) as TaskRecord[]) {
       try {
-        await sendReminderEmail({ supabase, resendApiKey, mailFrom, appUrl, task });
+        await sendReminderEmail({ supabase, appUrl, task });
         await supabase
           .from('tasks')
           .update({
@@ -442,7 +464,7 @@ Deno.serve(async (req) => {
 
     for (const schedule of dueSchedules) {
       try {
-        await sendReportEmail(supabase, resendApiKey, mailFrom, appUrl);
+        await sendReportEmail(supabase, appUrl);
         sent += 1;
       } catch (error: any) {
         failures.push({ schedule_id: schedule.id, error: error.message || 'Unknown error' });
@@ -473,7 +495,7 @@ Deno.serve(async (req) => {
     if (requesterRole?.role !== 'Admin') return jsonResponse({ error: 'Only admins can send reports.' }, 403);
 
     try {
-      const result = await sendReportEmail(supabase, resendApiKey, mailFrom, appUrl);
+      const result = await sendReportEmail(supabase, appUrl);
       return jsonResponse({ success: true, ...result });
     } catch (error: any) {
       return jsonResponse({
@@ -526,8 +548,6 @@ Deno.serve(async (req) => {
   try {
     const result = await sendReminderEmail({
       supabase,
-      resendApiKey,
-      mailFrom,
       appUrl,
       task: task as TaskRecord,
       recipientId: payload.recipient_id
@@ -535,7 +555,7 @@ Deno.serve(async (req) => {
 
     return jsonResponse({
       success: true,
-      provider: 'resend',
+      provider: 'smtp',
       task_id: task.id,
       recipients: result.recipients,
       message_id: result.messageId
