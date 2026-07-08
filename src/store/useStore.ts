@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { canViewTaskByDepartment, getTaskAssigneeIds, isTaskAssignee, supabase } from '../lib/supabase';
-import type { Department, Profile, Task, Category, Status } from '../lib/supabase';
+import type { Department, Profile, Task, Category, Status, ReportSchedule, TicketRequest, TicketStatus } from '../lib/supabase';
 import { buildRecurringTaskOccurrence, computeNextRecurrenceAfter } from '../lib/recurrence';
 
 type Theme = 'light' | 'dark';
@@ -33,6 +33,12 @@ const getReminderEmailErrorMessage = async (err: any) => {
   return message;
 };
 
+const isMissingReportSchedulesTable = (error: any) => (
+  error?.code === 'PGRST205' ||
+  error?.message?.includes("Could not find the table 'public.report_schedules'") ||
+  error?.message?.includes("relation \"public.report_schedules\" does not exist")
+);
+
 interface StoreState {
   currentUser: Profile | null;
   isCheckingSession: boolean;
@@ -48,10 +54,12 @@ interface StoreState {
   reminders: { id: string, taskId: string, message: string, type: 'warning' | 'urgent' | 'overdue' }[];
   dashboardTaskFilters: DashboardTaskFilters | null;
   adminSettingsTab: AdminSettingsTab;
+  reportSchedules: ReportSchedule[];
+  ticketRequests: TicketRequest[];
 
   setAlertData: (data: { message: string, type: 'error' | 'success' } | null) => void;
-  viewMode: 'dashboard' | 'kanban' | 'scrum' | 'settings' | 'archive' | 'my-tasks' | 'profile' | 'reminders' | 'recurring';
-  setViewMode: (mode: 'dashboard' | 'kanban' | 'scrum' | 'settings' | 'archive' | 'my-tasks' | 'profile' | 'reminders' | 'recurring') => void;
+  viewMode: 'dashboard' | 'kanban' | 'scrum' | 'tickets' | 'settings' | 'archive' | 'my-tasks' | 'profile' | 'reminders' | 'recurring';
+  setViewMode: (mode: 'dashboard' | 'kanban' | 'scrum' | 'tickets' | 'settings' | 'archive' | 'my-tasks' | 'profile' | 'reminders' | 'recurring') => void;
   setDashboardTaskFilters: (filters: DashboardTaskFilters | null) => void;
   setAdminSettingsTab: (tab: AdminSettingsTab) => void;
   updatePassword: (password: string) => Promise<void>;
@@ -70,6 +78,13 @@ interface StoreState {
   inviteUser: (email: string) => Promise<void>;
   sendTaskReminderEmail: (taskId: string) => Promise<boolean>;
   sendEmployeeDeadlineReminders: (userId: string) => Promise<void>;
+  sendReportEmailNow: () => Promise<boolean>;
+  createReportSchedule: (schedule: { schedule_type: string; time_of_day: string; day_of_week?: number; day_of_month?: number }) => Promise<boolean>;
+  deleteReportSchedule: (id: string) => Promise<boolean>;
+  fetchReportSchedules: () => Promise<void>;
+  createTicketRequest: (ticket: Pick<TicketRequest, 'title' | 'description' | 'priority' | 'category' | 'start_date' | 'end_date'>) => Promise<boolean>;
+  fetchTicketRequests: () => Promise<void>;
+  updateTicketRequestStatus: (id: string, status: TicketStatus) => Promise<void>;
   addCategory: (name: string, color: string) => Promise<void>;
   deleteCategory: (id: string) => Promise<void>;
   addStatus: (name: string, color: string) => Promise<void>;
@@ -103,7 +118,7 @@ applyTheme(getInitialTheme());
 const getInitialViewMode = (): StoreState['viewMode'] => {
   try {
     const saved = localStorage.getItem('elmeraki-view');
-    if (saved && ['dashboard', 'kanban', 'scrum', 'settings', 'archive', 'my-tasks', 'profile', 'reminders', 'recurring'].includes(saved)) {
+    if (saved && ['dashboard', 'kanban', 'scrum', 'tickets', 'settings', 'archive', 'my-tasks', 'profile', 'reminders', 'recurring'].includes(saved)) {
       return saved as StoreState['viewMode'];
     }
   } catch { }
@@ -113,6 +128,12 @@ const getInitialViewMode = (): StoreState['viewMode'] => {
 // Guard against multiple initializations
 let _initialized = false;
 let _isProcessingRecurringTasks = false;
+
+const hasPublicTaskOwner = (task: Partial<Task>) => (
+  Boolean(task.is_self_task) ||
+  Boolean(task.assignee_id) ||
+  Boolean(task.assignee_ids?.length)
+);
 
 export const useStore = create<StoreState>((set, get) => ({
   currentUser: null,
@@ -129,6 +150,8 @@ export const useStore = create<StoreState>((set, get) => ({
   reminders: [],
   dashboardTaskFilters: null,
   adminSettingsTab: 'users',
+  reportSchedules: [],
+  ticketRequests: [],
 
   setAlertData: (data) => set({ alertData: data }),
   setDashboardTaskFilters: (filters) => set({ dashboardTaskFilters: filters }),
@@ -428,6 +451,15 @@ export const useStore = create<StoreState>((set, get) => ({
         if (profiles) set({ profiles: profiles.map((p: any) => ({ ...p, role: getRole(p) })) });
         if (categories) set({ categories });
         if (statuses) set({ statuses });
+        if (profile && getRole(profile) === 'Admin') {
+          const { data: ticketRequests } = await supabase
+            .from('ticket_requests')
+            .select('*')
+            .order('created_at', { ascending: false });
+          if (ticketRequests) set({ ticketRequests });
+        } else {
+          set({ ticketRequests: [] });
+        }
 
         set({ isLoaded: true });
         get().checkTaskDeadlines();
@@ -476,7 +508,8 @@ export const useStore = create<StoreState>((set, get) => ({
           archivedTasks: [],
           profiles: [],
           categories: [],
-          statuses: []
+          statuses: [],
+          ticketRequests: []
         });
       }
     });
@@ -573,6 +606,12 @@ export const useStore = create<StoreState>((set, get) => ({
           supabase.from('statuses').select('*').order('sort_order').then(({ data }) => { if (data) set({ statuses: data }); });
         })
         .subscribe();
+
+      supabase.channel('rt-ticket-requests')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'ticket_requests' }, () => {
+          if (get().currentUser?.role === 'Admin') get().fetchTicketRequests();
+        })
+        .subscribe();
     } catch (e) {
       console.warn('Realtime subscriptions failed (non-critical):', e);
     }
@@ -580,6 +619,11 @@ export const useStore = create<StoreState>((set, get) => ({
 
   addTask: async (taskData) => {
     try {
+      if (!hasPublicTaskOwner(taskData)) {
+        get().setAlertData({ message: 'Tasks must have at least one assignee.', type: 'error' });
+        return { success: false, error: new Error('Tasks must have at least one assignee.') };
+      }
+
       const { data, error } = await supabase.from('tasks').insert([taskData]).select().single();
       if (error) {
         get().setAlertData({ message: "Error adding task: " + error.message, type: 'error' });
@@ -598,6 +642,14 @@ export const useStore = create<StoreState>((set, get) => ({
   updateTask: async (taskId, updates) => {
     // Optimistic update first for instant UI
     const prevTasks = get().tasks;
+    const currentTask = prevTasks.find(task => task.id === taskId);
+    const nextTask = currentTask ? { ...currentTask, ...updates } : updates;
+
+    if (currentTask && !hasPublicTaskOwner(nextTask)) {
+      get().setAlertData({ message: 'Tasks must have at least one assignee.', type: 'error' });
+      return;
+    }
+
     set((state) => ({
       tasks: state.tasks.map(t => t.id === taskId ? { ...t, ...updates } : t)
     }));
@@ -959,6 +1011,176 @@ export const useStore = create<StoreState>((set, get) => ({
         canViewTaskByDepartment(task, currentUser, profiles);
     });
   },
+  sendReportEmailNow: async () => {
+    const { currentUser, profiles } = get();
+
+    if (currentUser?.role !== 'Admin') {
+      get().setAlertData({ message: 'Only admins can send report emails.', type: 'error' });
+      return false;
+    }
+
+    if (!profiles.some(profile => profile.role === 'Admin' && profile.email)) {
+      get().setAlertData({ message: 'No admin email addresses are available for this report.', type: 'error' });
+      return false;
+    }
+
+    try {
+      const { data, error } = await supabase.functions.invoke('send-task-reminder', {
+        body: { send_report: true }
+      });
+
+      if (error) throw error;
+
+      get().setAlertData({
+        message: data?.testingMode
+          ? `Report sent to ${data.testingRecipient}. Resend is in testing mode, so ${data.skippedRecipientCount || 0} other admin${data.skippedRecipientCount === 1 ? '' : 's'} were skipped until a sending domain is verified.`
+          : `Report sent to ${data?.recipientCount || 'all'} admin${data?.recipientCount === 1 ? '' : 's'} via email.`,
+        type: 'success'
+      });
+      return true;
+    } catch (err: any) {
+      const message = await getReminderEmailErrorMessage(err);
+      const context = err?.context;
+      const status = context?.status || context?.response?.status;
+
+      if (status === 404 || message.includes('Failed to send a request to the Edge Function')) {
+        get().setAlertData({
+          message: 'The send-task-reminder Edge Function needs to be re-deployed with the latest code to support report sending.',
+          type: 'error'
+        });
+      } else {
+        get().setAlertData({ message: `Failed to send report: ${message}`, type: 'error' });
+      }
+      return false;
+    }
+  },
+
+  createReportSchedule: async (schedule) => {
+    const currentUser = get().currentUser;
+    if (currentUser?.role !== 'Admin') {
+      get().setAlertData({ message: 'Only admins can schedule report emails.', type: 'error' });
+      return false;
+    }
+
+    const { data, error } = await supabase.from('report_schedules').insert([{
+      created_by: currentUser.id,
+      schedule_type: schedule.schedule_type,
+      time_of_day: schedule.time_of_day,
+      day_of_week: schedule.day_of_week ?? null,
+      day_of_month: schedule.day_of_month ?? null
+    }]).select().single();
+
+    if (error) {
+      get().setAlertData({ message: `Error creating schedule: ${error.message}`, type: 'error' });
+      return false;
+    }
+
+    set(s => ({ reportSchedules: [...s.reportSchedules, data] }));
+    get().setAlertData({ message: 'Report schedule created.', type: 'success' });
+    return true;
+  },
+
+  deleteReportSchedule: async (id) => {
+    const { error } = await supabase.from('report_schedules').delete().eq('id', id);
+
+    if (error) {
+      get().setAlertData({ message: `Error deleting schedule: ${error.message}`, type: 'error' });
+      return false;
+    }
+
+    set(s => ({ reportSchedules: s.reportSchedules.filter(rs => rs.id !== id) }));
+    get().setAlertData({ message: 'Report schedule removed.', type: 'success' });
+    return true;
+  },
+
+  fetchReportSchedules: async () => {
+    const { data, error } = await supabase
+      .from('report_schedules')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      if (isMissingReportSchedulesTable(error)) {
+        set({ reportSchedules: [] });
+        return;
+      }
+
+      get().setAlertData({ message: `Error loading report schedules: ${error.message}`, type: 'error' });
+      return;
+    }
+
+    if (data) set({ reportSchedules: data });
+  },
+
+  createTicketRequest: async (ticket) => {
+    const currentUser = get().currentUser;
+    if (!currentUser) return false;
+
+    const { data, error } = await supabase
+      .from('ticket_requests')
+      .insert([{
+        requester_id: currentUser.id,
+        title: ticket.title,
+        description: ticket.description || null,
+        priority: ticket.priority,
+        category: ticket.category || null,
+        start_date: ticket.start_date || null,
+        end_date: ticket.end_date || null
+      }])
+      .select()
+      .single();
+
+    if (error) {
+      get().setAlertData({ message: `Error submitting ticket: ${error.message}`, type: 'error' });
+      return false;
+    }
+
+    if (currentUser.role === 'Admin' && data) {
+      set(state => ({ ticketRequests: [data, ...state.ticketRequests] }));
+    }
+
+    get().setAlertData({ message: 'Ticket request submitted to admins.', type: 'success' });
+    return true;
+  },
+
+  fetchTicketRequests: async () => {
+    if (get().currentUser?.role !== 'Admin') {
+      set({ ticketRequests: [] });
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('ticket_requests')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      get().setAlertData({ message: `Error loading tickets: ${error.message}`, type: 'error' });
+      return;
+    }
+
+    if (data) set({ ticketRequests: data });
+  },
+
+  updateTicketRequestStatus: async (id, status) => {
+    const previousTickets = get().ticketRequests;
+    set(state => ({
+      ticketRequests: state.ticketRequests.map(ticket => (
+        ticket.id === id ? { ...ticket, status } : ticket
+      ))
+    }));
+
+    const { error } = await supabase
+      .from('ticket_requests')
+      .update({ status })
+      .eq('id', id);
+
+    if (error) {
+      set({ ticketRequests: previousTickets });
+      get().setAlertData({ message: `Error updating ticket: ${error.message}`, type: 'error' });
+    }
+  },
+
   getDashboardTasks: () => {
     const { tasks, currentUser, profiles } = get();
     if (!currentUser) return [];

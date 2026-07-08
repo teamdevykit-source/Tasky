@@ -170,7 +170,6 @@ export const TaskBoard: React.FC<{
               onChange={setFilterAssignee}
               options={[
                 { value: 'All', label: 'All Assignees' },
-                { value: 'unassigned', label: 'Unassigned' },
                 ...profiles.map(p => ({ value: p.id, label: p.full_name }))
               ]}
               compact

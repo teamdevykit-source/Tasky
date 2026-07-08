@@ -84,6 +84,11 @@ export const CreateTaskModal: React.FC<{ onClose: () => void, forceSelfTask?: bo
       return;
     }
 
+    if (!isSelfTask && selectedAssigneeIds.length === 0) {
+      setAlertData({ message: 'Select at least one assignee before creating a task.', type: 'error' });
+      return;
+    }
+
     setIsSubmitting(true);
 
     const nextRecurrence = isRecurring

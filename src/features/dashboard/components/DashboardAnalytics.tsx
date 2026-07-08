@@ -1,7 +1,10 @@
 import React, { useMemo } from 'react';
 import { useStore } from '../../../store/useStore';
-import { BarChart, Activity, Clock, Users, Zap, LayoutDashboard, Target, ShieldCheck, ChevronDown, ChevronUp, Mail } from 'lucide-react';
+import { BarChart, Activity, Users, Zap, LayoutDashboard, Target, ShieldCheck, ChevronDown, ChevronUp, Mail, Download } from 'lucide-react';
 import { getTaskAssigneeIds, isTaskAssignee } from '../../../lib/supabase';
+import { downloadEmployeeSummary } from '../../../lib/exportExcel';
+import EmployeeScoreModal from './EmployeeScoreModal';
+import ScheduleReportModal from './ScheduleReportModal';
 
 export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = ({ onOpenCreateModal }) => {
   const [expandedRole, setExpandedRole] = React.useState<'Admin' | 'Worker' | null>(null);
@@ -55,8 +58,6 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
       });
     }
     
-    const unassigned = visibleTasks.filter(task => getTaskAssigneeIds(task).length === 0).length;
-    
     const myTasks = visibleTasks.filter(task => isTaskAssignee(task, currentUser?.id)).length;
 
     const byRole = {
@@ -66,8 +67,17 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
 
     const selfTasks = visibleTasks.filter((t: any) => t.is_self_task).length;
 
-    return { total, byStatus, byCategory, unassigned, myTasks, totalUsers: profiles.length, byRole, selfTasks };
+    return { total, byStatus, byCategory, myTasks, totalUsers: profiles.length, byRole, selfTasks };
   }, [visibleTasks, statuses, categories, currentUser]);
+
+  const [selectedProfile, setSelectedProfile] = React.useState<any | null>(null);
+  const [modalOpen, setModalOpen] = React.useState(false);
+  const [scheduleModalOpen, setScheduleModalOpen] = React.useState(false);
+
+  const openEmployeeModal = (p: any) => {
+    setSelectedProfile(p);
+    setModalOpen(true);
+  };
 
   if (!currentUser) return null;
 
@@ -98,9 +108,19 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
             </div>
           </div>
 
-          <button className="primary-btn" onClick={onOpenCreateModal}>
-            <Zap size={16} /> New Task
-          </button>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            {currentUser.role === 'Admin' && (
+              <button className="primary-btn" onClick={() => setScheduleModalOpen(true)} style={{ background: 'var(--surface-2)', color: 'var(--text-1)' }}>
+                <Mail size={16} /> Email Report
+              </button>
+            )}
+            <button className="primary-btn" onClick={() => downloadEmployeeSummary(visibleTasks as any, profiles, statuses)} style={{ background: 'var(--surface-2)', color: 'var(--text-1)' }}>
+              <Download size={16} /> Export Excel
+            </button>
+            <button className="primary-btn" onClick={onOpenCreateModal}>
+              <Zap size={16} /> New Task
+            </button>
+          </div>
         </div>
 
         {/* Dynamic Welcome Message */}
@@ -150,13 +170,6 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
           value={categories.filter(c => stats.byCategory.find(bc => bc.name === c.name && bc.count > 0)).length} 
           bg="rgba(251,191,36,0.1)"
           onClick={() => currentUser.role === 'Admin' ? openSettings('categories') : openTaskBoard()}
-        />
-        <MetricCard 
-          icon={<Clock size={20} color="#f87171" />} 
-          title="Unassigned" 
-          value={stats.unassigned} 
-          bg="rgba(248,113,113,0.1)"
-          onClick={() => openTaskBoard({ assignee: 'unassigned' })}
         />
         {currentUser.role === 'Admin' && (
           <MetricCard 
@@ -271,6 +284,38 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
             </h2>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {/* Employee Score Cards */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                {profiles.map(p => {
+                  // compute assigned tasks and completion percent
+                  const assigned = visibleTasks.filter((t: any) => getTaskAssigneeIds(t).includes(p.id));
+                  const maxSort = statuses.length > 0 ? Math.max(...statuses.map(s => s.sort_order || 0)) : 0;
+                  const completed = assigned.filter((t: any) => {
+                    const st = statuses.find(s => s.name === t.status);
+                    return !!st && (st.sort_order || 0) === maxSort;
+                  }).length;
+                  const pct = assigned.length > 0 ? Math.round((completed / assigned.length) * 100) : 0;
+
+                  return (
+                    <button key={p.id} onClick={() => openEmployeeModal(p)} className="employee-score-card" style={{
+                      background: 'var(--surface-2)', border: '1px solid var(--border)', padding: '0.6rem', borderRadius: 'var(--radius-md)', cursor: 'pointer', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '0.35rem'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <div className="avatar" style={{ width: '28px', height: '28px', borderRadius: '999px', background: 'var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>{p.full_name.charAt(0).toUpperCase()}</div>
+                        <div className="employee-meta" style={{ flex: 1, minWidth: 0 }}>
+                          <div className="employee-name" style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-1)' }}>{p.full_name}</div>
+                          <div className="employee-tasks" style={{ fontSize: '0.75rem', color: 'var(--text-4)' }}>{assigned.length} tasks</div>
+                        </div>
+                        <div className="employee-pct" style={{ fontWeight: 800, flexShrink: 0, marginLeft: '0.4rem' }}>{pct}%</div>
+                      </div>
+                      <div style={{ width: '100%', height: '8px', background: 'var(--surface-3)', borderRadius: '999px', overflow: 'hidden' }}>
+                        <div className="progress-fill" style={{ width: `${pct}%`, transition: 'width 0.6s ease' }} />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
               {/* Admins Group */}
               <div className="dashboard-role-group" style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
                 <button 
@@ -388,6 +433,8 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
           </div>
         )}
       </div>
+      <EmployeeScoreModal open={modalOpen} onClose={() => setModalOpen(false)} profile={selectedProfile} />
+      <ScheduleReportModal open={scheduleModalOpen} onClose={() => setScheduleModalOpen(false)} />
     </div>
   );
 };

@@ -12,6 +12,7 @@ import { AdminSettings } from './features/admin/components/AdminSettings';
 import { CompleteProfileModal } from './features/auth/components/CompleteProfileModal';
 import { RemindersView } from './features/reminders/components/RemindersView';
 import { ArchiveView } from './features/tasks/components/ArchiveView';
+import { TicketsView } from './features/tickets/components/TicketsView';
 import { useStore } from './store/useStore';
 import { Menu } from 'lucide-react';
 import './index.css';
@@ -108,6 +109,8 @@ function App() {
           <AdminSettings />
         ) : viewMode === 'archive' && currentUser.role === 'Admin' ? (
           <ArchiveView />
+        ) : viewMode === 'tickets' ? (
+          <TicketsView />
         ) : viewMode === 'dashboard' ? (
           <DashboardAnalytics onOpenCreateModal={() => setIsCreateModalOpen(true)} />
         ) : viewMode === 'my-tasks' ? (

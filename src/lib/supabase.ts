@@ -25,6 +25,19 @@ export interface Profile {
   role: UserRole;
 }
 
+export interface ReportSchedule {
+  id: string;
+  created_by: string;
+  schedule_type: 'daily' | 'weekly' | 'monthly';
+  time_of_day: string;
+  day_of_week: number | null;
+  day_of_month: number | null;
+  next_run_at: string;
+  last_run_at: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
 export interface Category {
   id: string;
   name: string;
@@ -41,6 +54,7 @@ export interface Status {
 
 export type RecurrenceType = 'daily' | 'weekly' | 'monthly';
 export type TaskPriority = 'High' | 'Medium' | 'Low';
+export type TicketStatus = 'Open' | 'In Review' | 'Approved' | 'Rejected';
 
 export interface Task {
   id: string;
@@ -68,6 +82,20 @@ export interface Task {
   recurrence_day?: number | null;    // 0-6 for weekly (Sun-Sat), 1-31 for monthly
   next_recurrence_at?: string | null;
   parent_task_id?: string | null;
+}
+
+export interface TicketRequest {
+  id: string;
+  requester_id: string;
+  title: string;
+  description: string | null;
+  priority: TaskPriority;
+  category: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  status: TicketStatus;
+  created_at: string;
+  updated_at: string;
 }
 
 export const getTaskAssigneeIds = (

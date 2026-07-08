@@ -73,6 +73,11 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
   const priorityColor = priorityOptions.find(option => option.value === priority)?.color || '#f59e0b';
 
   const toggleAssignee = (profileId: string) => {
+    if (assigneeIds.includes(profileId) && assigneeIds.length === 1) {
+      setAlertData({ message: 'Tasks must have at least one assignee.', type: 'error' });
+      return;
+    }
+
     const nextAssigneeIds = assigneeIds.includes(profileId)
       ? assigneeIds.filter(id => id !== profileId)
       : [...assigneeIds, profileId];

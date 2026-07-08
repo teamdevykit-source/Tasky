@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.101.1';
+import * as XLSX from 'npm:xlsx@0.18.5';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,6 +11,8 @@ type ReminderRequest = {
   task_id?: string;
   recipient_id?: string;
   process_due_reminders?: boolean;
+  send_report?: boolean;
+  process_due_schedules?: boolean;
 };
 
 type TaskRecord = {
@@ -23,6 +26,19 @@ type TaskRecord = {
   category: string | null;
   end_date: string | null;
   is_self_task: boolean;
+};
+
+type ProfileRecord = {
+  id: string;
+  email: string | null;
+  full_name: string | null;
+  department: string | null;
+  job_title: string | null;
+};
+
+type UserRoleRecord = {
+  user_id: string;
+  role: 'Admin' | 'Worker';
 };
 
 const jsonResponse = (body: unknown, status = 200) => (
@@ -50,6 +66,14 @@ const escapeHtml = (value: string | null | undefined) => (
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;')
+);
+
+const getSupabaseErrorMessage = (label: string, error: any) => (
+  error ? `${label}: ${error.message || 'Unknown database error'}` : null
+);
+
+const getResendTestingEmail = (message: string) => (
+  message.match(/own email address \(([^)]+)\)/i)?.[1]?.trim().toLowerCase() || null
 );
 
 const getAssigneeIds = (task: TaskRecord) => (
@@ -166,6 +190,156 @@ const sendReminderEmail = async ({
   };
 };
 
+const sendReportEmail = async (supabase: any, resendApiKey: string, mailFrom: string, appUrl: string) => {
+  const [
+    profilesResult,
+    tasksResult,
+    statusesResult,
+    rolesResult
+  ] = await Promise.all([
+    supabase.from('profiles').select('id, email, full_name, department, job_title'),
+    supabase.from('tasks').select('id, title, assignee_id, assignee_ids, creator_id, status, priority, category, end_date, is_self_task').is('deleted_at', null),
+    supabase.from('statuses').select('name, sort_order'),
+    supabase.from('user_roles').select('user_id, role')
+  ]);
+
+  const queryErrors = [
+    getSupabaseErrorMessage('Could not load profiles for report', profilesResult.error),
+    getSupabaseErrorMessage('Could not load tasks for report', tasksResult.error),
+    getSupabaseErrorMessage('Could not load statuses for report', statusesResult.error),
+    getSupabaseErrorMessage('Could not load roles for report', rolesResult.error)
+  ].filter(Boolean);
+
+  if (queryErrors.length > 0) {
+    throw new Error(queryErrors.join('; '));
+  }
+
+  const profiles = (profilesResult.data || []) as ProfileRecord[];
+  const tasks = ((tasksResult.data || []) as any[]).filter(task => !task.is_self_task);
+  const statuses = statusesResult.data || [];
+  const roles = (rolesResult.data || []) as UserRoleRecord[];
+
+  if (!profiles.length) throw new Error('No profiles found.');
+
+  const roleByUserId = new Map(roles.map(role => [role.user_id, role.role]));
+  const adminIds = new Set(roles.filter(role => role.role === 'Admin').map(role => role.user_id));
+  const adminProfiles = profiles.filter(profile => adminIds.has(profile.id) && profile.email);
+  if (adminProfiles.length === 0) throw new Error('No admin email addresses found.');
+
+  const maxSort = statuses.length > 0 ? Math.max(...statuses.map((s: any) => s.sort_order || 0)) : 0;
+  const isCompleted = (task: any) => {
+    if (statuses.length === 0) {
+      return ['done', 'completed'].includes(String(task.status || '').toLowerCase());
+    }
+
+    const status = statuses.find((s: any) => s.name === task.status);
+    return !!status && (status.sort_order || 0) === maxSort;
+  };
+  const getAssigneeIds = (task: any) => (
+    task.assignee_ids?.length ? task.assignee_ids : (task.assignee_id ? [task.assignee_id] : [])
+  );
+
+  const summaryRows = profiles.map((profile) => {
+    const assigned = tasks.filter((task: any) => getAssigneeIds(task).includes(profile.id));
+    const completed = assigned.filter(isCompleted);
+    const pct = assigned.length > 0 ? Math.round((completed.length / assigned.length) * 100) : 0;
+    return {
+      'Employee': profile.full_name || profile.email || 'Unknown',
+      'Email': profile.email || '-',
+      'Role': roleByUserId.get(profile.id) || 'Worker',
+      'Department': profile.department || '-',
+      'Job Title': profile.job_title || '-',
+      'Total Tasks': assigned.length,
+      'Completed': completed.length,
+      'Completion %': `${pct}%`
+    };
+  });
+
+  const taskRows = profiles.flatMap((profile) => {
+    const assigned = tasks.filter((task: any) => getAssigneeIds(task).includes(profile.id));
+    return assigned.map((task: any) => ({
+      'Employee': profile.full_name || profile.email || 'Unknown',
+      'Email': profile.email || '-',
+      'Role': roleByUserId.get(profile.id) || 'Worker',
+      'Task': task.title || 'Untitled',
+      'Status': task.status || 'No status',
+      'Priority': task.priority || '-',
+      'Category': task.category || '-',
+      'Deadline': task.end_date ? formatDate(task.end_date) : '-',
+      'Completed': isCompleted(task) ? 'Yes' : 'No'
+    }));
+  });
+
+  const wb = XLSX.utils.book_new();
+  const summarySheet = XLSX.utils.json_to_sheet(summaryRows);
+  summarySheet['!cols'] = Object.keys(summaryRows[0] || {}).map(key => ({ wch: Math.max(key.length, 20) }));
+  XLSX.utils.book_append_sheet(wb, summarySheet, 'Employee Summary');
+
+  const taskSheet = XLSX.utils.json_to_sheet(taskRows);
+  taskSheet['!cols'] = Object.keys(taskRows[0] || {}).map(key => ({ wch: Math.max(key.length, 25) }));
+  XLSX.utils.book_append_sheet(wb, taskSheet, 'Task Details');
+
+  const base64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
+
+  const now = new Date().toISOString().slice(0, 10);
+  const adminEmails = [
+    ...new Set(adminProfiles.map(profile => profile.email).filter((email): email is string => Boolean(email)))
+  ];
+
+  const sendToAdmins = async (recipients: string[]) => {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${resendApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: mailFrom,
+        to: recipients,
+        subject: `Employee Summary Report - ${now}`,
+        text: `Hello,\n\nPlease find attached the employee summary report for ${now}.\n\nGenerated by El Meraki Ops`,
+        html: `<div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.6;">
+        <h2>Employee Summary Report</h2>
+        <p>Hello,</p>
+        <p>Please find attached the employee summary report for <strong>${now}</strong>.</p>
+        <p><a href="${escapeHtml(appUrl)}" style="color: #4b46d8;">Open the Tasky workspace</a></p>
+        <p>Best regards,<br />El Meraki Ops</p>
+      </div>`,
+        attachments: [{ filename: `employee_summary_${now}.xlsx`, content: base64 }]
+      })
+    });
+
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const message = body?.message || body?.error || `HTTP ${res.status}`;
+      throw new Error(message);
+    }
+
+    return body;
+  };
+
+  try {
+    const body = await sendToAdmins(adminEmails);
+    return { recipientCount: adminEmails.length, messageId: body.id };
+  } catch (error: any) {
+    const providerMessage = error.message || 'Unknown';
+    const testingEmail = getResendTestingEmail(providerMessage);
+
+    if (testingEmail && adminEmails.map(email => email.toLowerCase()).includes(testingEmail)) {
+      const body = await sendToAdmins([testingEmail]);
+      return {
+        recipientCount: 1,
+        messageId: body.id,
+        testingMode: true,
+        testingRecipient: testingEmail,
+        skippedRecipientCount: adminEmails.length - 1
+      };
+    }
+
+    throw new Error(`Mail provider rejected the report: ${providerMessage}`);
+  }
+};
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -245,6 +419,68 @@ Deno.serve(async (req) => {
       sent,
       failures
     });
+  }
+
+  if (payload.process_due_schedules) {
+    if (!cronSecret || req.headers.get('x-cron-secret') !== cronSecret) {
+      return jsonResponse({ error: 'Invalid cron secret.' }, 401);
+    }
+
+    const { data: dueSchedules, error: claimError } = await supabase
+      .rpc('claim_due_report_schedules', { batch_size: 10 });
+
+    if (claimError) {
+      return jsonResponse({ error: `Unable to claim due reports: ${claimError.message}` }, 500);
+    }
+
+    if (!dueSchedules?.length) {
+      return jsonResponse({ success: true, claimed: 0, sent: 0 });
+    }
+
+    let sent = 0;
+    const failures: { schedule_id: string; error: string }[] = [];
+
+    for (const schedule of dueSchedules) {
+      try {
+        await sendReportEmail(supabase, resendApiKey, mailFrom, appUrl);
+        sent += 1;
+      } catch (error: any) {
+        failures.push({ schedule_id: schedule.id, error: error.message || 'Unknown error' });
+      }
+    }
+
+    return jsonResponse({
+      success: failures.length === 0,
+      claimed: dueSchedules.length,
+      sent,
+      failures
+    });
+  }
+
+  if (payload.send_report) {
+    const jwt = (req.headers.get('Authorization') || '').replace('Bearer ', '');
+    if (!jwt) return jsonResponse({ error: 'Missing authorization token.' }, 401);
+
+    const { data: authUser, error: authError } = await supabase.auth.getUser(jwt);
+    if (authError || !authUser.user) return jsonResponse({ error: 'Invalid authorization token.' }, 401);
+
+    const { data: requesterRole } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', authUser.user.id)
+      .maybeSingle();
+
+    if (requesterRole?.role !== 'Admin') return jsonResponse({ error: 'Only admins can send reports.' }, 403);
+
+    try {
+      const result = await sendReportEmail(supabase, resendApiKey, mailFrom, appUrl);
+      return jsonResponse({ success: true, ...result });
+    } catch (error: any) {
+      return jsonResponse({
+        error: error.message || 'Unable to send report.',
+        details: { name: error.name || 'Error' }
+      }, 502);
+    }
   }
 
   if (!payload.task_id) {

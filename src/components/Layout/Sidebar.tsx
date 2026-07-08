@@ -1,6 +1,6 @@
 import React from 'react';
 import { useStore } from '../../store/useStore';
-import { Archive, KanbanSquare, List, Settings, LogOut, Zap, Sun, Moon, X, LayoutDashboard, Lock, Bell, Repeat } from 'lucide-react';
+import { Archive, KanbanSquare, List, Settings, LogOut, Zap, Sun, Moon, X, LayoutDashboard, Lock, Bell, Repeat, Ticket } from 'lucide-react';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -15,6 +15,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const theme = useStore(s => s.theme);
   const toggleTheme = useStore(s => s.toggleTheme);
   const archivedTaskCount = useStore(state => state.archivedTasks.length);
+  const ticketCount = useStore(state => state.ticketRequests.filter(ticket => ticket.status !== 'Approved' && ticket.status !== 'Rejected').length);
   
   if (!currentUser) return null;
   const getDashboardTasks = useStore(s => s.getDashboardTasks);
@@ -164,6 +165,26 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           {currentUser.role === 'Admin' && (
             <>
               <button
+                className={`nav-item ${viewMode === 'tickets' ? 'active' : ''}`}
+                onClick={() => setViewMode('tickets')}
+              >
+                <Ticket size={17} />
+                <span>Tickets</span>
+                {ticketCount > 0 && (
+                  <span className="nav-pill nav-pill-count" style={{
+                    marginLeft: 'auto',
+                    padding: '0.1rem 0.4rem',
+                    borderRadius: 'var(--radius-full)',
+                    background: 'var(--primary)',
+                    color: 'white',
+                    fontSize: '0.65rem',
+                    fontWeight: 700
+                  }}>
+                    {ticketCount}
+                  </span>
+                )}
+              </button>
+              <button
                 className={`nav-item ${viewMode === 'settings' ? 'active' : ''}`}
                 onClick={() => setViewMode('settings')}
               >
@@ -191,6 +212,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                 )}
               </button>
             </>
+          )}
+          {currentUser.role !== 'Admin' && (
+            <button
+              className={`nav-item ${viewMode === 'tickets' ? 'active' : ''}`}
+              onClick={() => setViewMode('tickets')}
+            >
+              <Ticket size={17} />
+              <span>Request a Ticket</span>
+            </button>
           )}
         </nav>
       </div>

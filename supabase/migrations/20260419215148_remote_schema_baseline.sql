@@ -1,0 +1,3 @@
+-- Baseline placeholder for an already-applied remote migration.
+-- The remote Supabase project has this version in schema_migrations,
+-- but the original SQL file is not present in this repository.
