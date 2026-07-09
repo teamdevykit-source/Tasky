@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../../../store/useStore';
 import { isTaskAssignee } from '../../../lib/supabase';
-import { Plus, Trash2, Settings, Users, Layers, Tag, ShieldCheck, Mail, Send, Building2 } from 'lucide-react';
+import { Plus, Trash2, Settings, Users, Layers, Tag, ShieldCheck, Mail, Send, Building2, Eye, Lock } from 'lucide-react';
 import { ConfirmationModal } from '../../../components/Shared/ConfirmationModal';
 import { AppSelect } from '../../../components/Shared/AppSelect';
 
@@ -14,6 +14,7 @@ export const AdminSettings: React.FC = () => {
   const updateUserJobTitle = useStore(s => s.updateUserJobTitle);
   const updateUserDepartment = useStore(s => s.updateUserDepartment);
   const addDepartment = useStore(s => s.addDepartment);
+  const updateDepartmentPrivileges = useStore(s => s.updateDepartmentPrivileges);
   const deleteDepartment = useStore(s => s.deleteDepartment);
   const categories = useStore(s => s.categories);
   const addCategory = useStore(s => s.addCategory);
@@ -35,10 +36,16 @@ export const AdminSettings: React.FC = () => {
   const [newStatus, setNewStatus] = useState('');
   const [newStatusColor, setNewStatusColor] = useState('#818cf8');
   const [sendingReminderUserId, setSendingReminderUserId] = useState<string | null>(null);
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState<string | null>(null);
 
   useEffect(() => {
     setActiveTab(adminSettingsTab);
   }, [adminSettingsTab]);
+
+  useEffect(() => {
+    if (selectedDepartmentId && departments.some(department => department.id === selectedDepartmentId)) return;
+    setSelectedDepartmentId(departments[0]?.id || null);
+  }, [departments, selectedDepartmentId]);
 
   // Modal State
   const [confirmModal, setConfirmModal] = useState<{
@@ -72,6 +79,7 @@ export const AdminSettings: React.FC = () => {
       color: department.color
     }))
   ];
+  const selectedDepartment = departments.find(department => department.id === selectedDepartmentId) || null;
 
   const handleAddDepartment = () => {
     if (!newDepartment.trim()) return;
@@ -379,7 +387,11 @@ export const AdminSettings: React.FC = () => {
                       const memberCount = profiles.filter(profile => profile.department === department.name).length;
 
                       return (
-                        <tr key={department.id} className="scrum-row">
+                        <tr
+                          key={department.id}
+                          className={`scrum-row department-row ${selectedDepartmentId === department.id ? 'is-selected' : ''}`}
+                          onClick={() => setSelectedDepartmentId(department.id)}
+                        >
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                               <span style={{
@@ -393,7 +405,8 @@ export const AdminSettings: React.FC = () => {
                           <td className="actions-column">
                             <button
                               className="icon-danger-btn"
-                              onClick={() => {
+                              onClick={event => {
+                                event.stopPropagation();
                                 setConfirmModal({
                                   isOpen: true,
                                   title: 'Delete Department',
@@ -421,44 +434,102 @@ export const AdminSettings: React.FC = () => {
                 </table>
               </div>
 
-              <div className="scrum-table-wrapper settings-table-wrapper employee-assignment-panel">
-                <table className="scrum-table settings-table employee-assignment-table">
-                  <thead>
-                    <tr>
-                      <th>Employee</th>
-                      <th className="assignment-column">Department</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {profiles.map(profile => (
-                      <tr key={profile.id} className="scrum-row">
-                        <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                            <div className="avatar" style={{ width: '28px', height: '28px', fontSize: '0.68rem' }}>
-                              {profile.full_name.charAt(0).toUpperCase()}
-                            </div>
-                            <div className="employee-cell-copy">
-                              <div style={{ fontWeight: 700, color: 'var(--text-1)' }}>{profile.full_name}</div>
-                              <div style={{ color: 'var(--text-4)', fontSize: '0.7rem' }}>{profile.email}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="assignment-column">
-                          <AppSelect
-                            value={profile.department || unassignedDepartmentValue}
-                            onChange={value => updateUserDepartment(
-                              profile.id,
-                              value === unassignedDepartmentValue ? null : value
-                            )}
-                            options={departmentOptions}
-                            fullWidth
-                            searchable={departments.length > 6}
+              <div className="department-detail-stack">
+                <div className="department-privileges-panel">
+                  {selectedDepartment ? (
+                    <>
+                      <div className="department-privileges-header">
+                        <div>
+                          <span
+                            className="department-color-dot"
+                            style={{
+                              background: selectedDepartment.color,
+                              boxShadow: `0 0 12px ${selectedDepartment.color}55`
+                            }}
                           />
-                        </td>
+                          <div>
+                            <h3>{selectedDepartment.name}</h3>
+                            <p>Department privileges</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        className={`privilege-toggle-row ${selectedDepartment.can_view_all_tasks ? 'is-enabled' : ''}`}
+                        onClick={() => updateDepartmentPrivileges(selectedDepartment.id, {
+                          can_view_all_tasks: !selectedDepartment.can_view_all_tasks,
+                          hide_tasks_from_other_departments: selectedDepartment.hide_tasks_from_other_departments
+                        })}
+                      >
+                        <span className="privilege-icon"><Eye size={16} /></span>
+                        <span>
+                          <strong>Can see all public tasks</strong>
+                          <small>Members can view public tasks beyond their own assignments.</small>
+                        </span>
+                        <span className="system-switch" aria-hidden="true" />
+                      </button>
+
+                      <button
+                        type="button"
+                        className={`privilege-toggle-row ${selectedDepartment.hide_tasks_from_other_departments ? 'is-enabled' : ''}`}
+                        onClick={() => updateDepartmentPrivileges(selectedDepartment.id, {
+                          can_view_all_tasks: selectedDepartment.can_view_all_tasks,
+                          hide_tasks_from_other_departments: !selectedDepartment.hide_tasks_from_other_departments
+                        })}
+                      >
+                        <span className="privilege-icon"><Lock size={16} /></span>
+                        <span>
+                          <strong>Protect this department's tasks</strong>
+                          <small>Tasks involving this department stay hidden from other departments.</small>
+                        </span>
+                        <span className="system-switch" aria-hidden="true" />
+                      </button>
+                    </>
+                  ) : (
+                    <div className="department-empty-state">Select a department to edit privileges.</div>
+                  )}
+                </div>
+
+                <div className="scrum-table-wrapper settings-table-wrapper employee-assignment-panel">
+                  <table className="scrum-table settings-table employee-assignment-table">
+                    <thead>
+                      <tr>
+                        <th>Employee</th>
+                        <th className="assignment-column">Department</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {profiles.map(profile => (
+                        <tr key={profile.id} className="scrum-row">
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                              <div className="avatar" style={{ width: '28px', height: '28px', fontSize: '0.68rem' }}>
+                                {profile.full_name.charAt(0).toUpperCase()}
+                              </div>
+                              <div className="employee-cell-copy">
+                                <div style={{ fontWeight: 700, color: 'var(--text-1)' }}>{profile.full_name}</div>
+                                <div style={{ color: 'var(--text-4)', fontSize: '0.7rem' }}>{profile.email}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="assignment-column">
+                            <AppSelect
+                              value={profile.department || unassignedDepartmentValue}
+                              onChange={value => updateUserDepartment(
+                                profile.id,
+                                value === unassignedDepartmentValue ? null : value
+                              )}
+                              options={departmentOptions}
+                              fullWidth
+                              searchable={departments.length > 6}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </div>

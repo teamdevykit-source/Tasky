@@ -15,6 +15,7 @@ export const TaskBoard: React.FC<{
   const currentUser = useStore(s => s.currentUser);
   const updateTaskStatus = useStore(s => s.updateTaskStatus);
   const profiles = useStore(s => s.profiles);
+  const departments = useStore(s => s.departments);
   const statuses = useStore(s => s.statuses);
   const categories = useStore(s => s.categories);
   const tasks = useStore(s => s.tasks);
@@ -35,9 +36,9 @@ export const TaskBoard: React.FC<{
       return isTaskAssignee(task, currentUser.id) ||
              (task.creator_id === currentUser.id) ||
              (task.observers && task.observers.includes(currentUser.id)) ||
-             canViewTaskByDepartment(task, currentUser, profiles);
+             canViewTaskByDepartment(task, currentUser, profiles, departments);
     });
-  }, [tasks, currentUser, profiles]);
+  }, [tasks, currentUser, profiles, departments]);
 
   // Filter States
   const [searchQuery, setSearchQuery] = useState('');

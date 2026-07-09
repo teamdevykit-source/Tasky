@@ -89,6 +89,10 @@ interface StoreState {
   addCategory: (name: string, color: string) => Promise<void>;
   deleteCategory: (id: string) => Promise<void>;
   addDepartment: (name: string, color: string) => Promise<void>;
+  updateDepartmentPrivileges: (
+    id: string,
+    privileges: Pick<WorkspaceDepartment, 'can_view_all_tasks' | 'hide_tasks_from_other_departments'>
+  ) => Promise<void>;
   deleteDepartment: (id: string) => Promise<void>;
   addStatus: (name: string, color: string) => Promise<void>;
   deleteStatus: (id: string) => Promise<void>;
@@ -916,6 +920,29 @@ export const useStore = create<StoreState>((set, get) => ({
     }
   },
 
+  updateDepartmentPrivileges: async (id, privileges) => {
+    const prevDepartments = get().departments;
+
+    set(state => ({
+      departments: state.departments.map(department => (
+        department.id === id ? { ...department, ...privileges } : department
+      ))
+    }));
+
+    const { error } = await supabase
+      .from('departments')
+      .update(privileges)
+      .eq('id', id);
+
+    if (error) {
+      set({ departments: prevDepartments });
+      get().setAlertData({ message: `Error updating department privileges: ${error.message}`, type: 'error' });
+      return;
+    }
+
+    get().setAlertData({ message: 'Department privileges updated.', type: 'success' });
+  },
+
   deleteDepartment: async (id) => {
     const department = get().departments.find(candidate => candidate.id === id);
     if (!department) return;
@@ -1151,7 +1178,7 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   getVisibleTasks: () => {
-    const { tasks, currentUser, profiles } = get();
+    const { tasks, currentUser, profiles, departments } = get();
     if (!currentUser) return [];
 
     return tasks.filter(task => {
@@ -1164,7 +1191,7 @@ export const useStore = create<StoreState>((set, get) => ({
       return isTaskAssignee(task, currentUser.id) ||
         (task.creator_id === currentUser.id) ||
         (task.observers && task.observers.includes(currentUser.id)) ||
-        canViewTaskByDepartment(task, currentUser, profiles);
+        canViewTaskByDepartment(task, currentUser, profiles, departments);
     });
   },
   sendReportEmailNow: async () => {
@@ -1336,7 +1363,7 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   getDashboardTasks: () => {
-    const { tasks, currentUser, profiles } = get();
+    const { tasks, currentUser, profiles, departments } = get();
     if (!currentUser) return [];
 
     return tasks.filter(task => {
@@ -1350,7 +1377,7 @@ export const useStore = create<StoreState>((set, get) => ({
       return isTaskAssignee(task, currentUser.id) ||
              (task.creator_id === currentUser.id) ||
              (task.observers && task.observers.includes(currentUser.id)) ||
-             canViewTaskByDepartment(task, currentUser, profiles);
+             canViewTaskByDepartment(task, currentUser, profiles, departments);
     });
   }
 }));

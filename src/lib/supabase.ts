@@ -30,6 +30,8 @@ export interface WorkspaceDepartment {
   name: string;
   color: string;
   sort_order: number;
+  can_view_all_tasks: boolean;
+  hide_tasks_from_other_departments: boolean;
   created_at: string;
 }
 
@@ -121,9 +123,17 @@ export const isTaskAssignee = (
 export const canViewTaskByDepartment = (
   task: Task,
   currentUser: Profile,
-  profiles: Profile[]
+  profiles: Profile[],
+  departments: WorkspaceDepartment[] = []
 ) => {
-  if (currentUser.department !== 'Operations' && currentUser.department !== 'Finance') {
+  if (!currentUser.department) return false;
+
+  const currentDepartment = departments.find(department => department.name === currentUser.department);
+  const canViewAllTasks = currentDepartment?.can_view_all_tasks ||
+    currentUser.department === 'Operations' ||
+    currentUser.department === 'Finance';
+
+  if (!canViewAllTasks) {
     return false;
   }
 
@@ -133,8 +143,12 @@ export const canViewTaskByDepartment = (
     ...(task.observers || [])
   ]);
 
-  return !profiles.some(profile => (
-    profile.department === 'Top Management' &&
-    participantIds.has(profile.id)
-  ));
+  return !profiles.some(profile => {
+    if (!participantIds.has(profile.id) || !profile.department) return false;
+    if (profile.department === currentUser.department) return false;
+
+    const participantDepartment = departments.find(department => department.name === profile.department);
+    return participantDepartment?.hide_tasks_from_other_departments ||
+      profile.department === 'Top Management';
+  });
 };
