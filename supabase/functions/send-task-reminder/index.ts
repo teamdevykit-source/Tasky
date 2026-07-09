@@ -13,6 +13,7 @@ type ReminderRequest = {
   task_id?: string;
   recipient_id?: string;
   process_due_reminders?: boolean;
+  process_due_recurring_tasks?: boolean;
   send_report?: boolean;
   process_due_schedules?: boolean;
 };
@@ -25,9 +26,20 @@ type TaskRecord = {
   assignee_ids: string[] | null;
   creator_id: string;
   status: string;
+  priority: 'High' | 'Medium' | 'Low' | null;
   category: string | null;
+  observers: string[] | null;
+  start_date: string | null;
   end_date: string | null;
+  reminder_at: string | null;
+  reminder_sent_at: string | null;
   is_self_task: boolean;
+  is_recurring: boolean;
+  recurrence_type: 'daily' | 'weekly' | 'monthly' | null;
+  recurrence_time: string | null;
+  recurrence_day: number | null;
+  next_recurrence_at: string | null;
+  parent_task_id: string | null;
 };
 
 type ProfileRecord = {
@@ -95,6 +107,128 @@ const getAssigneeIds = (task: TaskRecord) => (
     ? task.assignee_ids
     : (task.assignee_id ? [task.assignee_id] : [])
 );
+
+const parseRecurrenceTime = (time?: string | null) => {
+  const [hour = 9, minute = 0] = (time || '09:00').split(':').map(Number);
+  return {
+    hour: Number.isFinite(hour) ? hour : 9,
+    minute: Number.isFinite(minute) ? minute : 0
+  };
+};
+
+const daysInMonth = (year: number, month: number) => (
+  new Date(year, month + 1, 0).getDate()
+);
+
+const clampMonthlyDay = (year: number, month: number, day?: number | null) => (
+  Math.min(Math.max(day || 1, 1), daysInMonth(year, month))
+);
+
+const computeNextRecurrenceAfter = (
+  type: NonNullable<TaskRecord['recurrence_type']>,
+  time?: string | null,
+  day?: number | null,
+  after: Date = new Date()
+) => {
+  const { hour, minute } = parseRecurrenceTime(time);
+  const base = new Date(after);
+  let next = new Date(base);
+
+  if (type === 'daily') {
+    next.setHours(hour, minute, 0, 0);
+    if (next <= base) next.setDate(next.getDate() + 1);
+    return next;
+  }
+
+  if (type === 'weekly') {
+    const targetDay = day ?? 1;
+    next.setHours(hour, minute, 0, 0);
+    let diff = targetDay - base.getDay();
+    if (diff < 0 || (diff === 0 && next <= base)) diff += 7;
+    next.setDate(next.getDate() + diff);
+    return next;
+  }
+
+  const targetDay = day ?? 1;
+  const clampedDay = clampMonthlyDay(base.getFullYear(), base.getMonth(), targetDay);
+  next = new Date(base.getFullYear(), base.getMonth(), clampedDay, hour, minute, 0, 0);
+
+  if (next <= base) {
+    const nextMonth = new Date(base.getFullYear(), base.getMonth() + 1, 1);
+    next = new Date(
+      nextMonth.getFullYear(),
+      nextMonth.getMonth(),
+      clampMonthlyDay(nextMonth.getFullYear(), nextMonth.getMonth(), targetDay),
+      hour,
+      minute,
+      0,
+      0
+    );
+  }
+
+  return next;
+};
+
+const buildRecurringTaskOccurrence = (
+  template: TaskRecord,
+  occurrenceAt: Date,
+  defaultStatus: string
+) => {
+  const originalStart = template.start_date ? new Date(template.start_date) : null;
+  const originalEnd = template.end_date ? new Date(template.end_date) : null;
+  const occurrenceStart = new Date(occurrenceAt);
+  let startDate: string | undefined;
+  let endDate: string | undefined;
+  let reminderAt: string | undefined;
+
+  if (originalStart && !Number.isNaN(originalStart.getTime())) {
+    startDate = occurrenceStart.toISOString();
+  }
+
+  if (originalEnd && !Number.isNaN(originalEnd.getTime())) {
+    if (originalStart && !Number.isNaN(originalStart.getTime())) {
+      const durationMs = Math.max(originalEnd.getTime() - originalStart.getTime(), 0);
+      endDate = new Date(occurrenceStart.getTime() + durationMs).toISOString();
+    } else {
+      endDate = occurrenceStart.toISOString();
+    }
+  }
+
+  const originalReminder = template.reminder_at ? new Date(template.reminder_at) : null;
+  if (
+    originalReminder &&
+    originalEnd &&
+    endDate &&
+    !Number.isNaN(originalReminder.getTime()) &&
+    !Number.isNaN(originalEnd.getTime())
+  ) {
+    const reminderLeadTime = Math.max(originalEnd.getTime() - originalReminder.getTime(), 0);
+    reminderAt = new Date(new Date(endDate).getTime() - reminderLeadTime).toISOString();
+  }
+
+  return {
+    title: template.title,
+    description: template.description,
+    assignee_id: template.assignee_id,
+    assignee_ids: template.assignee_ids || (template.assignee_id ? [template.assignee_id] : []),
+    creator_id: template.creator_id,
+    status: defaultStatus,
+    priority: template.priority || 'Medium',
+    category: template.category,
+    observers: template.observers || [],
+    is_self_task: template.is_self_task || false,
+    start_date: startDate,
+    end_date: endDate,
+    reminder_at: reminderAt,
+    reminder_sent_at: null,
+    is_recurring: false,
+    recurrence_type: null,
+    recurrence_time: null,
+    recurrence_day: null,
+    next_recurrence_at: null,
+    parent_task_id: template.id
+  };
+};
 
 const getSmtpConfig = () => {
   const host = Deno.env.get('SMTP_HOST');
@@ -368,6 +502,104 @@ const sendReportEmail = async (supabase: any, appUrl: string) => {
   }
 };
 
+const processDueRecurringTasks = async (supabase: any, appUrl: string) => {
+  const { data: defaultStatusRow } = await supabase
+    .from('statuses')
+    .select('name')
+    .order('sort_order', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  const defaultStatus = defaultStatusRow?.name || 'To Do';
+
+  const { data: dueTemplates, error: templatesError } = await supabase
+    .from('tasks')
+    .select(
+      'id, title, description, assignee_id, assignee_ids, creator_id, status, priority, category, ' +
+      'observers, is_self_task, start_date, end_date, reminder_at, reminder_sent_at, is_recurring, ' +
+      'recurrence_type, recurrence_time, recurrence_day, next_recurrence_at, parent_task_id'
+    )
+    .eq('is_recurring', true)
+    .is('parent_task_id', null)
+    .is('deleted_at', null)
+    .not('next_recurrence_at', 'is', null)
+    .lte('next_recurrence_at', new Date().toISOString())
+    .order('next_recurrence_at', { ascending: true })
+    .limit(50);
+
+  if (templatesError) {
+    throw new Error(`Unable to load due recurring tasks: ${templatesError.message}`);
+  }
+
+  let created = 0;
+  let immediateReminderEmails = 0;
+  const failures: { task_id: string; error: string }[] = [];
+
+  for (const template of (dueTemplates || []) as TaskRecord[]) {
+    try {
+      if (!template.recurrence_type || !template.next_recurrence_at) continue;
+
+      const occurrenceAt = new Date(template.next_recurrence_at);
+      if (Number.isNaN(occurrenceAt.getTime())) {
+        throw new Error('Template has an invalid next recurrence date.');
+      }
+
+      const nextRecurrence = computeNextRecurrenceAfter(
+        template.recurrence_type,
+        template.recurrence_time,
+        template.recurrence_type === 'daily' ? null : template.recurrence_day,
+        new Date()
+      ).toISOString();
+
+      const { data: claimedTemplate, error: claimError } = await supabase
+        .from('tasks')
+        .update({ next_recurrence_at: nextRecurrence })
+        .eq('id', template.id)
+        .eq('next_recurrence_at', template.next_recurrence_at)
+        .select('id')
+        .maybeSingle();
+
+      if (claimError) throw claimError;
+      if (!claimedTemplate) continue;
+
+      const occurrence = buildRecurringTaskOccurrence(template, occurrenceAt, defaultStatus);
+      const { data: createdTask, error: insertError } = await supabase
+        .from('tasks')
+        .insert([occurrence])
+        .select(
+          'id, title, description, assignee_id, assignee_ids, creator_id, status, priority, category, ' +
+          'observers, is_self_task, start_date, end_date, reminder_at, reminder_sent_at, is_recurring, ' +
+          'recurrence_type, recurrence_time, recurrence_day, next_recurrence_at, parent_task_id'
+        )
+        .single();
+
+      if (insertError) {
+        await supabase
+          .from('tasks')
+          .update({ next_recurrence_at: template.next_recurrence_at })
+          .eq('id', template.id);
+        throw insertError;
+      }
+
+      created += 1;
+
+      if (!createdTask.reminder_at) {
+        await sendReminderEmail({ supabase, appUrl, task: createdTask as TaskRecord });
+        immediateReminderEmails += 1;
+      }
+    } catch (error: any) {
+      failures.push({ task_id: template.id, error: error.message || 'Unknown error' });
+    }
+  }
+
+  return {
+    success: failures.length === 0,
+    claimed: dueTemplates?.length || 0,
+    created,
+    immediateReminderEmails,
+    failures
+  };
+};
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -399,6 +631,18 @@ Deno.serve(async (req) => {
       autoRefreshToken: false
     }
   });
+
+  if (payload.process_due_recurring_tasks) {
+    if (!cronSecret || req.headers.get('x-cron-secret') !== cronSecret) {
+      return jsonResponse({ error: 'Invalid cron secret.' }, 401);
+    }
+
+    try {
+      return jsonResponse(await processDueRecurringTasks(supabase, appUrl));
+    } catch (error: any) {
+      return jsonResponse({ error: error.message || 'Unable to process recurring tasks.' }, 500);
+    }
+  }
 
   if (payload.process_due_reminders) {
     if (!cronSecret || req.headers.get('x-cron-secret') !== cronSecret) {

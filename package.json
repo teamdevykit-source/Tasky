@@ -10,8 +10,11 @@
     "preview": "vite preview",
     "supabase:functions:list": "npx supabase functions list --project-ref xemslalhsxdqgzyfdtqf",
     "supabase:db:push": "npx supabase db push --linked --include-all",
+    "supabase:cron:reminders": "npx supabase db query --linked --file configure_task_reminder_cron.sql",
+    "supabase:cron:reports": "npx supabase db query --linked --file configure_report_cron.sql",
     "deploy:reminder-function": "npx supabase functions deploy send-task-reminder --project-ref xemslalhsxdqgzyfdtqf",
-    "setup:report-email": "npm run supabase:db:push && npm run deploy:reminder-function"
+    "setup:automatic-mails": "npm run supabase:db:push && npm run deploy:reminder-function && npm run supabase:cron:reminders && npm run supabase:cron:reports",
+    "setup:report-email": "npm run setup:automatic-mails"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.101.1",
