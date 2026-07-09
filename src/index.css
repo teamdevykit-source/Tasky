@@ -2864,6 +2864,33 @@ textarea:focus-visible {
   background: linear-gradient(90deg, var(--premium-blue), var(--premium-cyan), var(--premium-green));
 }
 
+.team-directory-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.team-directory-see-all {
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 0.45rem 0.75rem;
+  border: 1px solid rgba(59, 130, 246, 0.24);
+  border-radius: var(--radius-sm);
+  background: var(--primary-light);
+  color: var(--primary);
+  font-size: 0.75rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.team-directory-see-all:hover {
+  border-color: rgba(59, 130, 246, 0.42);
+  background: rgba(59, 130, 246, 0.18);
+}
+
 .dashboard-progress-row {
   border-radius: var(--radius-md);
   padding: 0.75rem !important;

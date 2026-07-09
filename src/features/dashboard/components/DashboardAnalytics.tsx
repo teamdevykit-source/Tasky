@@ -8,6 +8,7 @@ import ScheduleReportModal from './ScheduleReportModal';
 
 export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = ({ onOpenCreateModal }) => {
   const [expandedRole, setExpandedRole] = React.useState<'Admin' | 'Worker' | null>(null);
+  const [showAllTeamDirectory, setShowAllTeamDirectory] = React.useState(false);
   const tasks = useStore(s => s.tasks);
   const profiles = useStore(s => s.profiles);
   const currentUser = useStore(s => s.currentUser);
@@ -73,6 +74,7 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
   const [selectedProfile, setSelectedProfile] = React.useState<any | null>(null);
   const [modalOpen, setModalOpen] = React.useState(false);
   const [scheduleModalOpen, setScheduleModalOpen] = React.useState(false);
+  const teamDirectoryProfiles = showAllTeamDirectory ? profiles : profiles.slice(0, 6);
 
   const openEmployeeModal = (p: any) => {
     setSelectedProfile(p);
@@ -279,14 +281,25 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
             padding: '1.5rem', border: '1px solid var(--border)',
             boxShadow: 'var(--shadow-sm)'
           }}>
-            <h2 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-1)', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Users size={16} /> Team Directory
-            </h2>
+            <div className="team-directory-header">
+              <h2 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-1)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Users size={16} /> Team Directory
+              </h2>
+              {profiles.length > 6 && (
+                <button
+                  type="button"
+                  className="team-directory-see-all"
+                  onClick={() => setShowAllTeamDirectory(value => !value)}
+                >
+                  {showAllTeamDirectory ? 'Show less' : `See all ${profiles.length}`}
+                </button>
+              )}
+            </div>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               {/* Employee Score Cards */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                {profiles.map(p => {
+                {teamDirectoryProfiles.map(p => {
                   // compute assigned tasks and completion percent
                   const assigned = visibleTasks.filter((t: any) => getTaskAssigneeIds(t).includes(p.id));
                   const maxSort = statuses.length > 0 ? Math.max(...statuses.map(s => s.sort_order || 0)) : 0;
