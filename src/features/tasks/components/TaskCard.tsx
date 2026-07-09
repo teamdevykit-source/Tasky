@@ -62,7 +62,7 @@ export const TaskCard: React.FC<{ task: Task, onClick: () => void }> = ({ task, 
 
   return (
     <div 
-      className={`task-card ${isOverdue || isUrgent ? 'urgent-pulse' : ''} ${isHighPriority ? 'high-priority-task' : ''}`}
+      className={`task-card ${task.is_self_task ? 'self-task-card' : ''} ${isOverdue || isUrgent ? 'urgent-pulse' : ''} ${isHighPriority ? 'high-priority-task' : ''}`}
       style={{ 
         border: isHighPriority
           ? '1.5px solid rgba(239, 68, 68, 0.72)'
@@ -84,19 +84,23 @@ export const TaskCard: React.FC<{ task: Task, onClick: () => void }> = ({ task, 
       onClick={onClick}
     >
       {/* Top Row: Category + Icons */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem', minWidth: 0 }}>
         {task.category ? (
           <span style={{ 
             fontSize: '0.62rem', fontWeight: 700, color: categoryColor, 
             background: `${categoryColor}12`, padding: '0.2rem 0.5rem', 
             borderRadius: 'var(--radius-sm)', textTransform: 'uppercase', 
             letterSpacing: '0.04em',
-            border: `1px solid ${categoryColor}18`
+            border: `1px solid ${categoryColor}18`,
+            maxWidth: 'calc(100% - 70px)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap'
           }}>
             {task.category}
           </span>
         ) : <span />}
-        <div style={{ display: 'flex', gap: '0.375rem', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '0.375rem', alignItems: 'center', flexShrink: 0 }}>
           {isHighPriority && (
             <div
               title="HIGH PRIORITY"
@@ -122,7 +126,7 @@ export const TaskCard: React.FC<{ task: Task, onClick: () => void }> = ({ task, 
 
       {/* Bottom Area */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.75rem' }}>
-        <div style={{ 
+        <div className="task-card-date-row" style={{ 
           display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.68rem', 
           color: isOverdue ? 'var(--danger)' : isUrgent ? '#f87171' : isWarning ? '#f59e0b' : 'var(--text-4)',
           fontWeight: isUrgent || isOverdue ? 600 : 400
@@ -137,25 +141,25 @@ export const TaskCard: React.FC<{ task: Task, onClick: () => void }> = ({ task, 
           </span>
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '0.5rem' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1 }}>
+        <div className="task-card-footer">
+          <div className="task-card-people">
             {/* Maker */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <span style={{ fontSize: '0.55rem', fontWeight: 800, color: 'var(--text-4)', width: '32px' }}>MAKER</span>
+            <div className="task-card-person-row">
+              <span className="task-card-role-label">MAKER</span>
               <div className="avatar" style={{ width: '18px', height: '18px', fontSize: '0.5rem', borderWidth: '1px' }}>
                 {(profiles.find(u => u.id === task.creator_id)?.full_name || '?').charAt(0).toUpperCase()}
               </div>
-              <span style={{ fontSize: '0.65rem', color: 'var(--text-3)' }}>
+              <span className="task-card-person-name">
                 {profiles.find(u => u.id === task.creator_id)?.full_name?.split(' ')[0] || 'Unknown'}
               </span>
             </div>
 
             {/* Owner */}
             {!task.is_self_task && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <span style={{ fontSize: '0.55rem', fontWeight: 800, color: 'var(--text-4)', width: '32px' }}>OWNER</span>
+              <div className="task-card-person-row">
+                <span className="task-card-role-label">OWNER</span>
                 {assignees.length > 0 ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                  <div className="task-card-assignee-wrap">
                     <div style={{ display: 'flex' }}>
                       {assignees.slice(0, 3).map((assignee, index) => (
                         <div
@@ -171,7 +175,7 @@ export const TaskCard: React.FC<{ task: Task, onClick: () => void }> = ({ task, 
                         </div>
                       ))}
                     </div>
-                    <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-2)' }}>
+                    <span className="task-card-person-name" style={{ fontWeight: 700, color: 'var(--text-2)' }}>
                       {assignees.length === 1 ? assignees[0].full_name.split(' ')[0] : `${assignees.length} people`}
                     </span>
                   </div>
@@ -181,8 +185,8 @@ export const TaskCard: React.FC<{ task: Task, onClick: () => void }> = ({ task, 
 
             {/* Observers */}
             {task.observers && task.observers.length > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <span style={{ fontSize: '0.55rem', fontWeight: 800, color: 'var(--text-4)', width: '32px' }}>WATCH</span>
+              <div className="task-card-person-row">
+                <span className="task-card-role-label">WATCH</span>
                 <div style={{ display: 'flex', gap: '0.15rem' }}>
                   {task.observers.slice(0, 4).map(obsId => {
                     const obs = profiles.find(p => p.id === obsId);
@@ -200,7 +204,7 @@ export const TaskCard: React.FC<{ task: Task, onClick: () => void }> = ({ task, 
           </div>
 
           {isLocked ? (
-            <span style={{ 
+            <span className="task-card-status-pill" style={{ 
               fontSize: '0.62rem', fontWeight: 700, color: statusColor, 
               textTransform: 'uppercase', letterSpacing: '0.03em',
               background: `${statusColor}10`, padding: '0.15rem 0.4rem',
@@ -209,17 +213,14 @@ export const TaskCard: React.FC<{ task: Task, onClick: () => void }> = ({ task, 
               {task.status}
             </span>
           ) : (
-            <div onClick={e => e.stopPropagation()}>
+            <div className="task-card-status-control" onClick={e => e.stopPropagation()}>
               <AppSelect
-              value={task.status}
-              onChange={(value) => updateTaskStatus(task.id, value)}
-              options={statuses.map(s => ({ value: s.name, label: s.name, color: s.color }))}
-              accentColor={statusColor}
-              compact
-              style={{ 
-                width: '128px'
-              }}
-            />
+                value={task.status}
+                onChange={(value) => updateTaskStatus(task.id, value)}
+                options={statuses.map(s => ({ value: s.name, label: s.name, color: s.color }))}
+                accentColor={statusColor}
+                compact
+              />
             </div>
           )}
         </div>

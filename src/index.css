@@ -619,6 +619,108 @@ select option {
   font-weight: 600;
   color: var(--text-1);
   line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.task-card-date-row {
+  min-width: 0;
+}
+
+.task-card-date-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.task-card-people {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  flex: 1 1 118px;
+  min-width: 0;
+}
+
+.task-card-person-row {
+  display: grid;
+  grid-template-columns: 34px 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 0.38rem;
+  min-width: 0;
+}
+
+.task-card-role-label {
+  width: 34px;
+  font-size: 0.52rem;
+  font-weight: 800;
+  color: var(--text-4);
+  line-height: 1;
+}
+
+.task-card-person-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.65rem;
+  color: var(--text-3);
+}
+
+.task-card-assignee-wrap {
+  grid-column: 2 / 4;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.task-card-status-control {
+  flex: 0 1 122px;
+  min-width: 112px;
+  max-width: 132px;
+}
+
+.task-card-status-control .app-select,
+.task-card-status-control .app-select-trigger {
+  width: 100%;
+  min-width: 0;
+}
+
+.task-card-status-control .app-select-trigger {
+  height: 32px;
+  min-height: 32px;
+  padding: 0.32rem 0.48rem;
+}
+
+.task-card-status-control .app-select-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-card-status-pill {
+  flex: 0 1 auto;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 390px) {
+  .task-card-status-control {
+    flex-basis: 100%;
+    max-width: none;
+  }
 }
 
 .task-desc-markdown {
@@ -2784,4 +2886,8 @@ textarea:focus {
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.06em;
+}
+
+.task-card {
+  overflow: visible !important;
 }
