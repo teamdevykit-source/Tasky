@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useStore } from '../../../store/useStore';
-import { canViewTaskByDepartment, getTaskAssigneeIds, isTaskAssignee } from '../../../lib/supabase';
+import { canViewTaskByDepartment, getTaskAssigneeIds, isTaskAssignee, type Task } from '../../../lib/supabase';
 import { TaskCard } from './TaskCard';
-import { Search, Filter, ArrowUpDown, Clock, User as UserIcon, Tag, LayoutGrid, ListChecks, Lock, AlertTriangle, AlertCircle, Plus } from 'lucide-react';
+import { Search, Filter, ArrowUpDown, Clock, User as UserIcon, Tag, LayoutGrid, ListChecks, Lock, AlertTriangle, AlertCircle, Plus, Trash2 } from 'lucide-react';
 import { formatDateTime } from '../../../lib/format';
 import { AppSelect } from '../../../components/Shared/AppSelect';
+import { ConfirmationModal } from '../../../components/Shared/ConfirmationModal';
 
 export const TaskBoard: React.FC<{ 
   onSelectTask: (id: string | null) => void,
@@ -17,6 +18,7 @@ export const TaskBoard: React.FC<{
   const statuses = useStore(s => s.statuses);
   const categories = useStore(s => s.categories);
   const tasks = useStore(s => s.tasks);
+  const deleteTasks = useStore(s => s.deleteTasks);
   const dashboardTaskFilters = useStore(s => s.dashboardTaskFilters);
   const setDashboardTaskFilters = useStore(s => s.setDashboardTaskFilters);
   
@@ -44,6 +46,9 @@ export const TaskBoard: React.FC<{
   const [filterAssignee, setFilterAssignee] = useState<string>('All');
   const [filterSelfTasks, setFilterSelfTasks] = useState<'all' | 'only' | 'hide'>('all');
   const [sortBy, setSortBy] = useState<'name' | 'date' | 'status'>('date');
+  const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false);
 
   useEffect(() => {
     if (!dashboardTaskFilters) return;
@@ -80,6 +85,50 @@ export const TaskBoard: React.FC<{
 
     return result;
   }, [visibleTasks, searchQuery, filterStatus, filterCategory, filterAssignee, filterSelfTasks, sortBy]);
+
+  const canDeleteTask = React.useCallback((task: Task) => {
+    if (!currentUser) return false;
+    return task.is_self_task
+      ? currentUser.id === task.creator_id
+      : currentUser.role === 'Admin' || currentUser.id === task.creator_id;
+  }, [currentUser]);
+
+  const selectableTaskIds = useMemo(
+    () => filteredTasks.filter(canDeleteTask).map(task => task.id),
+    [filteredTasks, canDeleteTask]
+  );
+  const selectedDeletableIds = selectedTaskIds.filter(id => selectableTaskIds.includes(id));
+  const selectedTaskIdSet = new Set(selectedDeletableIds);
+  const allSelectableSelected = selectableTaskIds.length > 0 &&
+    selectableTaskIds.every(id => selectedTaskIdSet.has(id));
+
+  const toggleTaskSelection = (taskId: string) => {
+    setSelectedTaskIds(prev => (
+      prev.includes(taskId)
+        ? prev.filter(id => id !== taskId)
+        : [...prev, taskId]
+    ));
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedTaskIds(allSelectableSelected ? [] : selectableTaskIds);
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedDeletableIds.length === 0) return;
+    setIsBulkDeleteConfirmOpen(true);
+  };
+
+  const confirmBulkDelete = async () => {
+    setIsBulkDeleting(true);
+    const success = await deleteTasks(selectedDeletableIds);
+    if (success) setSelectedTaskIds([]);
+    setIsBulkDeleting(false);
+  };
+
+  useEffect(() => {
+    setSelectedTaskIds(prev => prev.filter(id => selectableTaskIds.includes(id)));
+  }, [selectableTaskIds]);
 
   if (!currentUser) return null;
 
@@ -252,10 +301,60 @@ export const TaskBoard: React.FC<{
 
         <FilterBar />
 
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.85rem',
+          padding: '0.75rem 1rem', border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-lg)', background: 'var(--surface-2)'
+        }}>
+          <label style={{
+            display: 'inline-flex', alignItems: 'center', gap: '0.55rem',
+            fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-3)'
+          }}>
+            <input
+              type="checkbox"
+              checked={allSelectableSelected}
+              disabled={selectableTaskIds.length === 0}
+              onChange={toggleSelectAll}
+              aria-label="Select all deletable tasks"
+            />
+            Select all
+          </label>
+          <button
+            type="button"
+            onClick={handleBulkDelete}
+            disabled={selectedDeletableIds.length === 0 || isBulkDeleting}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: '0.45rem',
+              padding: '0.58rem 0.9rem', borderRadius: 'var(--radius-md)',
+              background: selectedDeletableIds.length > 0 ? 'rgba(248,113,113,0.14)' : 'var(--surface-3)',
+              color: selectedDeletableIds.length > 0 ? 'var(--danger)' : 'var(--text-4)',
+              border: '1px solid rgba(248,113,113,0.22)',
+              fontSize: '0.76rem', fontWeight: 800,
+              cursor: selectedDeletableIds.length === 0 || isBulkDeleting ? 'not-allowed' : 'pointer',
+              opacity: isBulkDeleting ? 0.65 : 1
+            }}
+          >
+            <Trash2 size={14} />
+            {isBulkDeleting
+              ? 'Deleting...'
+              : `Delete${selectedDeletableIds.length > 0 ? ` (${selectedDeletableIds.length})` : ''}`}
+          </button>
+        </div>
+
         <div className="scrum-table-wrapper" style={{ borderRadius: 'var(--radius-xl)', overflowX: 'auto', overflowY: 'hidden' }}>
           <table className="scrum-table">
             <thead>
               <tr>
+                <th style={{ width: '44px' }}>
+                  <input
+                    type="checkbox"
+                    checked={allSelectableSelected}
+                    disabled={selectableTaskIds.length === 0}
+                    onChange={toggleSelectAll}
+                    aria-label="Select all deletable tasks"
+                  />
+                </th>
                 <th style={{ width: '25%' }}>Task</th>
                 <th>Category</th>
                 <th>Timeline</th>
@@ -274,6 +373,7 @@ export const TaskBoard: React.FC<{
                 );
                 const catColor = categories.find(c => c.name === task.category)?.color || '#64748b';
                 const statColor = statuses.find(s => s.name === task.status)?.color || '#64748b';
+                const isSelectable = canDeleteTask(task);
 
                 return (
                   <tr 
@@ -281,6 +381,16 @@ export const TaskBoard: React.FC<{
                     className={`scrum-row ${task.priority === 'High' ? 'high-priority-row' : ''}`}
                     onClick={() => onSelectTask(task.id)}
                   >
+                    <td onClick={event => event.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedTaskIdSet.has(task.id)}
+                        disabled={!isSelectable}
+                        onChange={() => toggleTaskSelection(task.id)}
+                        aria-label={`Select ${task.title}`}
+                        title={isSelectable ? 'Select task' : 'Only admins or task creators can delete this task'}
+                      />
+                    </td>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         {task.is_self_task && <Lock size={12} style={{ color: 'var(--primary)', opacity: 0.8 }} />}
@@ -430,6 +540,15 @@ export const TaskBoard: React.FC<{
             </div>
           )}
         </div>
+        <ConfirmationModal
+          isOpen={isBulkDeleteConfirmOpen}
+          onClose={() => setIsBulkDeleteConfirmOpen(false)}
+          onConfirm={confirmBulkDelete}
+          title="Move selected tasks to Archive"
+          message={`This will move ${selectedDeletableIds.length} selected task${selectedDeletableIds.length === 1 ? '' : 's'} out of active views. Admins can restore them from Archive.`}
+          confirmText={isBulkDeleting ? 'Deleting...' : 'Move to Archive'}
+          type="danger"
+        />
       </div>
     );
   }

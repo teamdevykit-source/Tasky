@@ -157,6 +157,56 @@ input, select, textarea {
   color: inherit;
 }
 
+input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 17px;
+  height: 17px;
+  border-radius: 5px;
+  border: 1.5px solid rgba(148, 163, 184, 0.34);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01)),
+    var(--surface-2);
+  display: inline-grid;
+  place-content: center;
+  cursor: pointer;
+  vertical-align: middle;
+  transition: var(--transition-fast);
+  flex-shrink: 0;
+}
+
+input[type="checkbox"]::before {
+  content: '';
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  transform: scale(0);
+  transition: transform 0.14s ease;
+  background: #ffffff;
+  clip-path: polygon(14% 44%, 0 59%, 38% 100%, 100% 20%, 84% 7%, 36% 68%);
+}
+
+input[type="checkbox"]:checked {
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+  box-shadow: 0 8px 18px rgba(59, 130, 246, 0.22);
+}
+
+input[type="checkbox"]:checked::before {
+  transform: scale(1);
+}
+
+input[type="checkbox"]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--primary-glow);
+}
+
+input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.36;
+  box-shadow: none;
+}
+
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   background: var(--bg);

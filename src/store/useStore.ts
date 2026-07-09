@@ -91,7 +91,9 @@ interface StoreState {
   deleteStatus: (id: string) => Promise<void>;
   deleteUser: (userId: string) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
+  deleteTasks: (ids: string[]) => Promise<boolean>;
   restoreTask: (id: string) => Promise<void>;
+  permanentlyDeleteTask: (id: string) => Promise<boolean>;
   dismissReminder: (reminderId: string) => void;
   checkTaskDeadlines: () => void;
   processDueRecurringTasks: () => Promise<void>;
@@ -956,6 +958,58 @@ export const useStore = create<StoreState>((set, get) => ({
     }
   },
 
+  deleteTasks: async (ids) => {
+    const uniqueIds = [...new Set(ids)];
+    const tasksToArchive = get().tasks.filter(task => uniqueIds.includes(task.id));
+    const currentUser = get().currentUser;
+    if (!currentUser || tasksToArchive.length === 0) return false;
+
+    const deletedAt = new Date().toISOString();
+    const archivedTasks = tasksToArchive.map(task => ({
+      ...task,
+      deleted_at: deletedAt,
+      deleted_by: currentUser.id
+    }));
+    const taskIds = tasksToArchive.map(task => task.id);
+
+    set(state => ({
+      tasks: state.tasks.filter(task => !taskIds.includes(task.id)),
+      archivedTasks: [
+        ...state.archivedTasks.filter(task => !taskIds.includes(task.id)),
+        ...archivedTasks
+      ]
+    }));
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({
+        deleted_at: deletedAt,
+        deleted_by: currentUser.id,
+        reminder_claimed_at: null
+      })
+      .in('id', taskIds)
+      .select('id');
+
+    if (error || !data || data.length !== taskIds.length) {
+      set(state => ({
+        tasks: [
+          ...state.tasks.filter(task => !taskIds.includes(task.id)),
+          ...tasksToArchive
+        ],
+        archivedTasks: state.archivedTasks.filter(task => !taskIds.includes(task.id))
+      }));
+      const message = error?.message || 'You do not have permission to archive one or more selected tasks.';
+      get().setAlertData({ message: `Error archiving tasks: ${message}`, type: 'error' });
+      return false;
+    }
+
+    get().setAlertData({
+      message: `${taskIds.length} task${taskIds.length === 1 ? '' : 's'} moved to Archive.`,
+      type: 'success'
+    });
+    return true;
+  },
+
   restoreTask: async (id) => {
     const task = get().archivedTasks.find(candidate => candidate.id === id);
     if (!task) return;
@@ -988,6 +1042,35 @@ export const useStore = create<StoreState>((set, get) => ({
     } else {
       get().setAlertData({ message: 'Task restored successfully.', type: 'success' });
     }
+  },
+
+  permanentlyDeleteTask: async (id) => {
+    const task = get().archivedTasks.find(candidate => candidate.id === id);
+    if (!task) return false;
+
+    set(state => ({
+      archivedTasks: state.archivedTasks.filter(candidate => candidate.id !== id)
+    }));
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .delete()
+      .eq('id', id)
+      .not('deleted_at', 'is', null)
+      .select('id')
+      .maybeSingle();
+
+    if (error || !data) {
+      set(state => ({
+        archivedTasks: [...state.archivedTasks.filter(candidate => candidate.id !== id), task]
+      }));
+      const message = error?.message || 'You do not have permission to permanently delete this task.';
+      get().setAlertData({ message: `Error permanently deleting task: ${message}`, type: 'error' });
+      return false;
+    }
+
+    get().setAlertData({ message: 'Task permanently deleted.', type: 'success' });
+    return true;
   },
 
   logout: async () => {

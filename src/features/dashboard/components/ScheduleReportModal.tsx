@@ -1,6 +1,8 @@
 import React from 'react';
 import { useStore } from '../../../store/useStore';
 import { CalendarClock, Clock, Mail, Send, Trash2 } from 'lucide-react';
+import { AppDateTimePicker } from '../../../components/Shared/AppDateTimePicker';
+import { AppSelect } from '../../../components/Shared/AppSelect';
 
 export const ScheduleReportModal: React.FC<{
   open: boolean;
@@ -29,6 +31,19 @@ export const ScheduleReportModal: React.FC<{
   if (!open || currentUser?.role !== 'Admin') return null;
 
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const frequencyOptions = [
+    { value: 'daily', label: 'Daily' },
+    { value: 'weekly', label: 'Weekly' },
+    { value: 'monthly', label: 'Monthly' }
+  ];
+  const dayOfWeekOptions = dayNames.map((name, index) => ({
+    value: String(index),
+    label: name
+  }));
+  const dayOfMonthOptions = Array.from({ length: 28 }, (_, index) => ({
+    value: String(index + 1),
+    label: String(index + 1)
+  }));
 
   const formatNextRun = (value: string) => (
     new Intl.DateTimeFormat(undefined, {
@@ -86,58 +101,46 @@ export const ScheduleReportModal: React.FC<{
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
             <div>
               <label style={{ fontSize: '0.8rem', color: 'var(--text-4)', display: 'block', marginBottom: '0.3rem' }}>Frequency</label>
-              <select
+              <AppSelect
                 value={scheduleType}
-                onChange={e => setScheduleType(e.target.value as any)}
-                className="app-select"
-                style={{ width: '100%' }}
-              >
-                <option value="daily">Daily</option>
-                <option value="weekly">Weekly</option>
-                <option value="monthly">Monthly</option>
-              </select>
+                onChange={value => setScheduleType(value as 'daily' | 'weekly' | 'monthly')}
+                options={frequencyOptions}
+                fullWidth
+              />
             </div>
 
             {scheduleType === 'weekly' && (
               <div>
                 <label style={{ fontSize: '0.8rem', color: 'var(--text-4)', display: 'block', marginBottom: '0.3rem' }}>Day of Week</label>
-                <select
-                  value={dayOfWeek}
-                  onChange={e => setDayOfWeek(Number(e.target.value))}
-                  className="app-select"
-                  style={{ width: '100%' }}
-                >
-                  {dayNames.map((name, i) => (
-                    <option key={i} value={i}>{name}</option>
-                  ))}
-                </select>
+                <AppSelect
+                  value={String(dayOfWeek)}
+                  onChange={value => setDayOfWeek(Number(value))}
+                  options={dayOfWeekOptions}
+                  fullWidth
+                />
               </div>
             )}
 
             {scheduleType === 'monthly' && (
               <div>
                 <label style={{ fontSize: '0.8rem', color: 'var(--text-4)', display: 'block', marginBottom: '0.3rem' }}>Day of Month</label>
-                <select
-                  value={dayOfMonth}
-                  onChange={e => setDayOfMonth(Number(e.target.value))}
-                  className="app-select"
-                  style={{ width: '100%' }}
-                >
-                  {Array.from({ length: 28 }, (_, i) => i + 1).map(d => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
+                <AppSelect
+                  value={String(dayOfMonth)}
+                  onChange={value => setDayOfMonth(Number(value))}
+                  options={dayOfMonthOptions}
+                  fullWidth
+                />
               </div>
             )}
 
             <div>
               <label style={{ fontSize: '0.8rem', color: 'var(--text-4)', display: 'block', marginBottom: '0.3rem' }}>Time</label>
-              <input
-                type="time"
+              <AppDateTimePicker
                 value={time}
-                onChange={e => setTime(e.target.value)}
-                className="app-select"
-                style={{ width: '100%' }}
+                onChange={setTime}
+                includeDate={false}
+                includeTime
+                placeholder="Select time"
               />
             </div>
 

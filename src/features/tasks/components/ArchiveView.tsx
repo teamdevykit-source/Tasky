@@ -1,15 +1,19 @@
 import React, { useMemo, useState } from 'react';
-import { Archive, Calendar, RotateCcw, Search, UserRound } from 'lucide-react';
+import { Archive, Calendar, RotateCcw, Search, Trash2, UserRound } from 'lucide-react';
 import { formatDateTime } from '../../../lib/format';
 import { getTaskAssigneeIds } from '../../../lib/supabase';
 import { useStore } from '../../../store/useStore';
+import { ConfirmationModal } from '../../../components/Shared/ConfirmationModal';
 
 export const ArchiveView: React.FC = () => {
   const archivedTasks = useStore(state => state.archivedTasks);
   const profiles = useStore(state => state.profiles);
   const restoreTask = useStore(state => state.restoreTask);
+  const permanentlyDeleteTask = useStore(state => state.permanentlyDeleteTask);
   const [searchQuery, setSearchQuery] = useState('');
   const [restoringTaskId, setRestoringTaskId] = useState<string | null>(null);
+  const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null);
+  const [taskToDelete, setTaskToDelete] = useState<{ id: string; title: string } | null>(null);
 
   const filteredTasks = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -29,6 +33,18 @@ export const ArchiveView: React.FC = () => {
     setRestoringTaskId(taskId);
     await restoreTask(taskId);
     setRestoringTaskId(null);
+  };
+
+  const handlePermanentDelete = async (taskId: string, taskTitle: string) => {
+    setTaskToDelete({ id: taskId, title: taskTitle });
+  };
+
+  const confirmPermanentDelete = async () => {
+    if (!taskToDelete) return;
+
+    setDeletingTaskId(taskToDelete.id);
+    await permanentlyDeleteTask(taskToDelete.id);
+    setDeletingTaskId(null);
   };
 
   return (
@@ -87,6 +103,7 @@ export const ArchiveView: React.FC = () => {
             const assignees = profiles.filter(profile => getTaskAssigneeIds(task).includes(profile.id));
             const deletedBy = profiles.find(profile => profile.id === task.deleted_by);
             const isRestoring = restoringTaskId === task.id;
+            const isDeleting = deletingTaskId === task.id;
 
             return (
               <div
@@ -133,27 +150,56 @@ export const ArchiveView: React.FC = () => {
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => handleRestore(task.id)}
-                  disabled={isRestoring}
-                  style={{
-                    display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
-                    padding: '0.62rem 0.9rem', borderRadius: 'var(--radius-md)',
-                    background: 'var(--primary-light)', color: 'var(--primary)',
-                    border: '1px solid color-mix(in srgb, var(--primary) 30%, transparent)',
-                    fontWeight: 700, fontSize: '0.76rem', cursor: isRestoring ? 'wait' : 'pointer',
-                    opacity: isRestoring ? 0.6 : 1
-                  }}
-                >
-                  <RotateCcw size={14} />
-                  {isRestoring ? 'Restoring...' : 'Restore'}
-                </button>
+                <div style={{ display: 'flex', gap: '0.55rem', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => handleRestore(task.id)}
+                    disabled={isRestoring || isDeleting}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
+                      padding: '0.62rem 0.9rem', borderRadius: 'var(--radius-md)',
+                      background: 'var(--primary-light)', color: 'var(--primary)',
+                      border: '1px solid color-mix(in srgb, var(--primary) 30%, transparent)',
+                      fontWeight: 700, fontSize: '0.76rem',
+                      cursor: isRestoring || isDeleting ? 'wait' : 'pointer',
+                      opacity: isRestoring || isDeleting ? 0.6 : 1
+                    }}
+                  >
+                    <RotateCcw size={14} />
+                    {isRestoring ? 'Restoring...' : 'Restore'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePermanentDelete(task.id, task.title)}
+                    disabled={isRestoring || isDeleting}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
+                      padding: '0.62rem 0.9rem', borderRadius: 'var(--radius-md)',
+                      background: 'rgba(248,113,113,0.12)', color: 'var(--danger)',
+                      border: '1px solid rgba(248,113,113,0.24)',
+                      fontWeight: 700, fontSize: '0.76rem',
+                      cursor: isRestoring || isDeleting ? 'wait' : 'pointer',
+                      opacity: isRestoring || isDeleting ? 0.6 : 1
+                    }}
+                  >
+                    <Trash2 size={14} />
+                    {isDeleting ? 'Deleting...' : 'Delete'}
+                  </button>
+                </div>
               </div>
             );
           })}
         </div>
       )}
+      <ConfirmationModal
+        isOpen={Boolean(taskToDelete)}
+        onClose={() => setTaskToDelete(null)}
+        onConfirm={confirmPermanentDelete}
+        title="Permanently delete task"
+        message={`"${taskToDelete?.title || 'This task'}" will be permanently removed. This cannot be undone.`}
+        confirmText={deletingTaskId ? 'Deleting...' : 'Delete permanently'}
+        type="danger"
+      />
     </div>
   );
 };

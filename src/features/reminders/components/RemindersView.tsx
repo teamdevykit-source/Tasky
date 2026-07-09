@@ -18,6 +18,7 @@ export const RemindersView: React.FC<{
   const getVisibleTasks = useStore(s => s.getVisibleTasks);
   const sendTaskReminderEmail = useStore(s => s.sendTaskReminderEmail);
   const updateTaskStatus = useStore(s => s.updateTaskStatus);
+  const setAlertData = useStore(s => s.setAlertData);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
@@ -59,7 +60,10 @@ export const RemindersView: React.FC<{
 
   const handleEmailReminder = async (task: any, assignees: any[]) => {
     if (!assignees.some(assignee => assignee.email)) {
-      alert("This task's assignees don't have email addresses associated with their profiles.");
+      setAlertData({
+        message: "This task's assignees don't have email addresses associated with their profiles.",
+        type: 'error'
+      });
       return;
     }
 
