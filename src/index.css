@@ -968,6 +968,150 @@ select option {
 }
 
 /* ==========================================
+   SETTINGS
+========================================== */
+.settings-page {
+  width: 100%;
+  max-width: 1280px;
+}
+
+.settings-create-panel {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) auto auto;
+  gap: 0.75rem;
+  align-items: end;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.01)),
+    var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.settings-form-field {
+  min-width: 0;
+}
+
+.settings-color-field {
+  width: 74px;
+}
+
+.settings-color-input {
+  width: 44px;
+  height: 40px;
+  padding: 3px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  cursor: pointer;
+}
+
+.settings-add-btn {
+  min-width: 92px;
+  height: 40px;
+  justify-content: center;
+  font-size: 0.82rem;
+}
+
+.departments-layout {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.78fr) minmax(430px, 1.22fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.settings-table-wrapper {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.settings-table {
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.settings-table th,
+.settings-table .scrum-row td {
+  padding: 0.9rem 1rem;
+}
+
+.departments-table .members-column {
+  width: 112px;
+  color: var(--text-3);
+  font-weight: 800;
+  text-align: center;
+}
+
+.departments-table .actions-column {
+  width: 86px;
+  text-align: right;
+}
+
+.employee-assignment-table {
+  min-width: 560px;
+}
+
+.employee-assignment-table .assignment-column {
+  width: 180px;
+}
+
+.employee-cell-copy {
+  min-width: 0;
+}
+
+.employee-cell-copy > div {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.icon-danger-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid rgba(248, 113, 113, 0.16);
+  border-radius: var(--radius-sm);
+  background: rgba(248, 113, 113, 0.08);
+  color: var(--danger);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.icon-danger-btn:hover {
+  border-color: rgba(248, 113, 113, 0.32);
+  background: rgba(248, 113, 113, 0.14);
+}
+
+@media (max-width: 1100px) {
+  .departments-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .employee-assignment-table {
+    min-width: 520px;
+  }
+}
+
+@media (max-width: 680px) {
+  .settings-create-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-color-field {
+    width: 100%;
+  }
+
+  .settings-add-btn {
+    width: 100%;
+  }
+}
+
+/* ==========================================
    SCROLLBAR
 ========================================== */
 ::-webkit-scrollbar { width: 6px; height: 6px; }

@@ -1,10 +1,10 @@
 import { create } from 'zustand';
 import { canViewTaskByDepartment, getTaskAssigneeIds, isTaskAssignee, supabase } from '../lib/supabase';
-import type { Department, Profile, Task, Category, Status, ReportSchedule, TicketRequest, TicketStatus } from '../lib/supabase';
+import type { Department, Profile, Task, Category, Status, ReportSchedule, TicketRequest, TicketStatus, WorkspaceDepartment } from '../lib/supabase';
 import { buildRecurringTaskOccurrence, computeNextRecurrenceAfter } from '../lib/recurrence';
 
 type Theme = 'light' | 'dark';
-type AdminSettingsTab = 'users' | 'categories' | 'statuses';
+type AdminSettingsTab = 'users' | 'departments' | 'categories' | 'statuses';
 
 export interface DashboardTaskFilters {
   status?: string;
@@ -49,6 +49,7 @@ interface StoreState {
   archivedTasks: Task[];
   categories: Category[];
   statuses: Status[];
+  departments: WorkspaceDepartment[];
   theme: Theme;
   alertData: { message: string, type: 'error' | 'success' } | null;
   reminders: { id: string, taskId: string, message: string, type: 'warning' | 'urgent' | 'overdue' }[];
@@ -74,7 +75,7 @@ interface StoreState {
   updateTaskStatus: (taskId: string, status: string) => Promise<void>;
   updateUserRole: (userId: string, role: Profile['role']) => Promise<void>;
   updateUserJobTitle: (userId: string, jobTitle: string) => Promise<void>;
-  updateUserDepartment: (userId: string, department: Department) => Promise<void>;
+  updateUserDepartment: (userId: string, department: Department | null) => Promise<void>;
   inviteUser: (email: string) => Promise<void>;
   sendTaskReminderEmail: (taskId: string) => Promise<boolean>;
   sendEmployeeDeadlineReminders: (userId: string) => Promise<void>;
@@ -87,6 +88,8 @@ interface StoreState {
   updateTicketRequestStatus: (id: string, status: TicketStatus) => Promise<void>;
   addCategory: (name: string, color: string) => Promise<void>;
   deleteCategory: (id: string) => Promise<void>;
+  addDepartment: (name: string, color: string) => Promise<void>;
+  deleteDepartment: (id: string) => Promise<void>;
   addStatus: (name: string, color: string) => Promise<void>;
   deleteStatus: (id: string) => Promise<void>;
   deleteUser: (userId: string) => Promise<void>;
@@ -147,6 +150,7 @@ export const useStore = create<StoreState>((set, get) => ({
   archivedTasks: [],
   categories: [],
   statuses: [],
+  departments: [],
   theme: getInitialTheme(),
   alertData: null,
   reminders: [],
@@ -404,7 +408,8 @@ export const useStore = create<StoreState>((set, get) => ({
           supabase.from('tasks').select('*'),
           supabase.from('profiles').select('*, user_roles(role)'),
           supabase.from('categories').select('*').order('sort_order'),
-          supabase.from('statuses').select('*').order('sort_order')
+          supabase.from('statuses').select('*').order('sort_order'),
+          supabase.from('departments').select('*').order('sort_order')
         ]);
 
         const timeoutPromise = new Promise((_, reject) => 
@@ -412,7 +417,14 @@ export const useStore = create<StoreState>((set, get) => ({
         );
 
         const results = await Promise.race([dataPromise, timeoutPromise]) as any[];
-        let [{ data: profile }, { data: tasks }, { data: profiles }, { data: categories }, { data: statuses }] = results;
+        let [
+          { data: profile },
+          { data: tasks },
+          { data: profiles },
+          { data: categories },
+          { data: statuses },
+          { data: departments }
+        ] = results;
 
         // 2. Handle missing profile (Lazy creation)
         if (!profile) {
@@ -453,6 +465,7 @@ export const useStore = create<StoreState>((set, get) => ({
         if (profiles) set({ profiles: profiles.map((p: any) => ({ ...p, role: getRole(p) })) });
         if (categories) set({ categories });
         if (statuses) set({ statuses });
+        if (departments) set({ departments });
         if (profile && getRole(profile) === 'Admin') {
           const { data: ticketRequests } = await supabase
             .from('ticket_requests')
@@ -511,6 +524,7 @@ export const useStore = create<StoreState>((set, get) => ({
           profiles: [],
           categories: [],
           statuses: [],
+          departments: [],
           ticketRequests: []
         });
       }
@@ -600,6 +614,12 @@ export const useStore = create<StoreState>((set, get) => ({
       supabase.channel('rt-categories')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, () => {
           supabase.from('categories').select('*').order('sort_order').then(({ data }) => { if (data) set({ categories: data }); });
+        })
+        .subscribe();
+
+      supabase.channel('rt-departments')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'departments' }, () => {
+          supabase.from('departments').select('*').order('sort_order').then(({ data }) => { if (data) set({ departments: data }); });
         })
         .subscribe();
 
@@ -874,6 +894,59 @@ export const useStore = create<StoreState>((set, get) => ({
     if (error) {
       set({ categories: prevCategories });
       get().setAlertData({ message: "Error deleting category: " + error.message, type: 'error' });
+    }
+  },
+
+  addDepartment: async (name, color) => {
+    const trimmedName = name.trim();
+    if (!trimmedName) return;
+
+    const { departments } = get();
+    const { data, error } = await supabase
+      .from('departments')
+      .insert([{ name: trimmedName, color, sort_order: departments.length }])
+      .select()
+      .single();
+
+    if (data) {
+      set(state => ({ departments: [...state.departments, data] }));
+      get().setAlertData({ message: 'Department created.', type: 'success' });
+    } else if (error) {
+      get().setAlertData({ message: `Error adding department: ${error.message}`, type: 'error' });
+    }
+  },
+
+  deleteDepartment: async (id) => {
+    const department = get().departments.find(candidate => candidate.id === id);
+    if (!department) return;
+
+    const prevDepartments = get().departments;
+    const prevProfiles = get().profiles;
+    set(state => ({
+      departments: state.departments.filter(candidate => candidate.id !== id),
+      profiles: state.profiles.map(profile => (
+        profile.department === department.name ? { ...profile, department: null } : profile
+      )),
+      currentUser: state.currentUser?.department === department.name
+        ? { ...state.currentUser, department: null }
+        : state.currentUser
+    }));
+
+    const { error } = await supabase
+      .from('departments')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      set({
+        departments: prevDepartments,
+        profiles: prevProfiles,
+        currentUser: prevProfiles.find(profile => profile.id === get().currentUser?.id) || get().currentUser
+      });
+      get().setAlertData({ message: `Error deleting department: ${error.message}`, type: 'error' });
+    } else {
+      get().setAlertData({ message: 'Department removed.', type: 'success' });
+      get().refreshData();
     }
   },
 

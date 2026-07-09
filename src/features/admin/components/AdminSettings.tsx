@@ -1,18 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../../../store/useStore';
 import { isTaskAssignee } from '../../../lib/supabase';
-import { Plus, Trash2, Settings, Users, Layers, Tag, ShieldCheck, Mail, Send } from 'lucide-react';
+import { Plus, Trash2, Settings, Users, Layers, Tag, ShieldCheck, Mail, Send, Building2 } from 'lucide-react';
 import { ConfirmationModal } from '../../../components/Shared/ConfirmationModal';
 import { AppSelect } from '../../../components/Shared/AppSelect';
-import type { Department } from '../../../lib/supabase';
 
 export const AdminSettings: React.FC = () => {
   const currentUser = useStore(s => s.currentUser);
   const profiles = useStore(s => s.profiles);
   const tasks = useStore(s => s.tasks);
+  const departments = useStore(s => s.departments);
   const updateUserRole = useStore(s => s.updateUserRole);
   const updateUserJobTitle = useStore(s => s.updateUserJobTitle);
   const updateUserDepartment = useStore(s => s.updateUserDepartment);
+  const addDepartment = useStore(s => s.addDepartment);
+  const deleteDepartment = useStore(s => s.deleteDepartment);
   const categories = useStore(s => s.categories);
   const addCategory = useStore(s => s.addCategory);
   const deleteCategory = useStore(s => s.deleteCategory);
@@ -24,8 +26,10 @@ export const AdminSettings: React.FC = () => {
   const sendEmployeeDeadlineReminders = useStore(s => s.sendEmployeeDeadlineReminders);
   const adminSettingsTab = useStore(s => s.adminSettingsTab);
 
-  const [activeTab, setActiveTab] = useState<'users' | 'categories' | 'statuses'>(adminSettingsTab);
+  const [activeTab, setActiveTab] = useState<'users' | 'departments' | 'categories' | 'statuses'>(adminSettingsTab);
   const [inviteEmail, setInviteEmail] = useState('');
+  const [newDepartment, setNewDepartment] = useState('');
+  const [newDepartmentColor, setNewDepartmentColor] = useState('#3b82f6');
   const [newCategory, setNewCategory] = useState('');
   const [newCategoryColor, setNewCategoryColor] = useState('#818cf8');
   const [newStatus, setNewStatus] = useState('');
@@ -59,7 +63,22 @@ export const AdminSettings: React.FC = () => {
   }
 
   const ROLES = ['Admin', 'Worker'];
-  const DEPARTMENTS: Department[] = ['Operations', 'Finance', 'Top Management'];
+  const unassignedDepartmentValue = '__unassigned__';
+  const departmentOptions = [
+    { value: unassignedDepartmentValue, label: 'Unassigned' },
+    ...departments.map(department => ({
+      value: department.name,
+      label: department.name,
+      color: department.color
+    }))
+  ];
+
+  const handleAddDepartment = () => {
+    if (!newDepartment.trim()) return;
+    addDepartment(newDepartment.trim(), newDepartmentColor);
+    setNewDepartment('');
+    setNewDepartmentColor('#3b82f6');
+  };
 
   const handleAddCategory = () => {
     if (!newCategory.trim()) return;
@@ -99,7 +118,7 @@ export const AdminSettings: React.FC = () => {
   };
 
   return (
-    <div className="animate-fadeIn">
+    <div className="animate-fadeIn settings-page">
       {/* Header */}
       <header style={{ marginBottom: '2rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -121,6 +140,13 @@ export const AdminSettings: React.FC = () => {
         >
           <Users size={14} style={{ display: 'inline', marginRight: '6px' }}/>
           Users
+        </button>
+        <button
+          className={`toggle-btn ${activeTab === 'departments' ? 'active' : ''}`}
+          onClick={() => setActiveTab('departments')}
+        >
+          <Building2 size={14} style={{ display: 'inline', marginRight: '6px' }}/>
+          Departments
         </button>
         <button 
           className={`toggle-btn ${activeTab === 'categories' ? 'active' : ''}`}
@@ -217,30 +243,25 @@ export const AdminSettings: React.FC = () => {
                     </td>
                     <td>
                       <AppSelect
-                        value={user.role}
-                        onChange={(value) => updateUserRole(user.id, value as any)}
-                        disabled={user.id === currentUser.id}
-                        options={ROLES.map(role => ({ value: role, label: role }))}
-                        style={{ 
-                          width: '130px'
-                        }}
+                        value={user.department || unassignedDepartmentValue}
+                        onChange={value => updateUserDepartment(
+                          user.id,
+                          value === unassignedDepartmentValue ? null : value
+                        )}
+                        placeholder="Assign department"
+                        options={departmentOptions}
+                        style={{ width: '165px' }}
                       />
                     </td>
                     <td>
                       <AppSelect
-                        value={user.department || ''}
-                        onChange={value => updateUserDepartment(user.id, value as Department)}
-                        placeholder="Assign department"
-                        options={DEPARTMENTS.map(department => ({
-                          value: department,
-                          label: department,
-                          color: department === 'Top Management'
-                            ? '#ef4444'
-                            : department === 'Finance'
-                              ? '#22c55e'
-                              : '#3b82f6'
-                        }))}
-                        style={{ width: '165px' }}
+                        value={user.role}
+                        onChange={(value) => updateUserRole(user.id, value as any)}
+                        disabled={user.id === currentUser.id}
+                        options={ROLES.map(role => ({ value: role, label: role }))}
+                        style={{
+                          width: '130px'
+                        }}
                       />
                     </td>
                     <td>
@@ -306,6 +327,140 @@ export const AdminSettings: React.FC = () => {
               </tbody>
             </table>
           </div>
+          </div>
+        )}
+
+        {/* Departments Tab */}
+        {activeTab === 'departments' && (
+          <div className="departments-settings">
+            <div className="settings-create-panel departments-create-panel">
+              <div className="settings-form-field">
+                <label style={fieldLabel}>Department Name</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Marketing"
+                  value={newDepartment}
+                  onChange={e => setNewDepartment(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleAddDepartment()}
+                  style={{ width: '100%' }}
+                />
+              </div>
+              <div className="settings-form-field settings-color-field">
+                <label style={fieldLabel}>Color</label>
+                <input
+                  className="settings-color-input"
+                  type="color"
+                  value={newDepartmentColor}
+                  onChange={e => setNewDepartmentColor(e.target.value)}
+                  aria-label="Department color"
+                />
+              </div>
+              <button
+                className="primary-btn settings-add-btn"
+                onClick={handleAddDepartment}
+                disabled={!newDepartment.trim()}
+              >
+                <Plus size={16} /> Add
+              </button>
+            </div>
+
+            <div className="departments-layout">
+              <div className="scrum-table-wrapper settings-table-wrapper departments-list-panel">
+                <table className="scrum-table settings-table departments-table">
+                  <thead>
+                    <tr>
+                      <th>Department</th>
+                      <th className="members-column">Members</th>
+                      <th className="actions-column">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {departments.map(department => {
+                      const memberCount = profiles.filter(profile => profile.department === department.name).length;
+
+                      return (
+                        <tr key={department.id} className="scrum-row">
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                              <span style={{
+                                width: '10px', height: '10px', borderRadius: '50%',
+                                background: department.color, boxShadow: `0 0 10px ${department.color}55`
+                              }} />
+                              <span style={{ fontWeight: 700, color: 'var(--text-1)' }}>{department.name}</span>
+                            </div>
+                          </td>
+                          <td className="members-column">{memberCount}</td>
+                          <td className="actions-column">
+                            <button
+                              className="icon-danger-btn"
+                              onClick={() => {
+                                setConfirmModal({
+                                  isOpen: true,
+                                  title: 'Delete Department',
+                                  message: `Delete "${department.name}"? Assigned employees will become unassigned.`,
+                                  onConfirm: () => deleteDepartment(department.id)
+                                });
+                              }}
+                              title="Delete department"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {departments.length === 0 && (
+                      <tr>
+                        <td colSpan={3} style={{ textAlign: 'center', color: 'var(--text-4)', padding: '3rem' }}>
+                          <Building2 size={28} style={{ display: 'block', margin: '0 auto 0.75rem', opacity: 0.1 }} />
+                          No departments defined.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="scrum-table-wrapper settings-table-wrapper employee-assignment-panel">
+                <table className="scrum-table settings-table employee-assignment-table">
+                  <thead>
+                    <tr>
+                      <th>Employee</th>
+                      <th className="assignment-column">Department</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {profiles.map(profile => (
+                      <tr key={profile.id} className="scrum-row">
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                            <div className="avatar" style={{ width: '28px', height: '28px', fontSize: '0.68rem' }}>
+                              {profile.full_name.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="employee-cell-copy">
+                              <div style={{ fontWeight: 700, color: 'var(--text-1)' }}>{profile.full_name}</div>
+                              <div style={{ color: 'var(--text-4)', fontSize: '0.7rem' }}>{profile.email}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="assignment-column">
+                          <AppSelect
+                            value={profile.department || unassignedDepartmentValue}
+                            onChange={value => updateUserDepartment(
+                              profile.id,
+                              value === unassignedDepartmentValue ? null : value
+                            )}
+                            options={departmentOptions}
+                            fullWidth
+                            searchable={departments.length > 6}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
 

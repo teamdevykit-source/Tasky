@@ -14,7 +14,7 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
 
 // Types
 export type UserRole = 'Admin' | 'Worker';
-export type Department = 'Operations' | 'Finance' | 'Top Management';
+export type Department = string;
 
 export interface Profile {
   id: string;
@@ -23,6 +23,14 @@ export interface Profile {
   job_title?: string;
   department?: Department | null;
   role: UserRole;
+}
+
+export interface WorkspaceDepartment {
+  id: string;
+  name: string;
+  color: string;
+  sort_order: number;
+  created_at: string;
 }
 
 export interface ReportSchedule {
