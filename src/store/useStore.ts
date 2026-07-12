@@ -39,6 +39,22 @@ const isMissingReportSchedulesTable = (error: any) => (
   error?.message?.includes("relation \"public.report_schedules\" does not exist")
 );
 
+const getUserSafeAlertMessage = (message: string) => {
+  const containsDatabaseDetails = [
+    /new row for relation/i,
+    /violates (check|foreign key|unique|not-null) constraint/i,
+    /duplicate key value/i,
+    /relation ["'].*["'] does not exist/i,
+    /column ["'].*["']/i,
+    /SQLSTATE/i,
+    /PGRST\d+/i
+  ].some(pattern => pattern.test(message));
+
+  return containsDatabaseDetails
+    ? 'We could not complete that action. Please try again or contact an administrator.'
+    : message;
+};
+
 interface StoreState {
   currentUser: Profile | null;
   isCheckingSession: boolean;
@@ -101,6 +117,7 @@ interface StoreState {
   deleteTasks: (ids: string[]) => Promise<boolean>;
   restoreTask: (id: string) => Promise<void>;
   permanentlyDeleteTask: (id: string) => Promise<boolean>;
+  permanentlyDeleteTasks: (ids: string[]) => Promise<boolean>;
   dismissReminder: (reminderId: string) => void;
   checkTaskDeadlines: () => void;
   processDueRecurringTasks: () => Promise<void>;
@@ -163,7 +180,11 @@ export const useStore = create<StoreState>((set, get) => ({
   reportSchedules: [],
   ticketRequests: [],
 
-  setAlertData: (data) => set({ alertData: data }),
+  setAlertData: (data) => set({
+    alertData: data?.type === 'error'
+      ? { ...data, message: getUserSafeAlertMessage(data.message) }
+      : data
+  }),
   setDashboardTaskFilters: (filters) => set({ dashboardTaskFilters: filters }),
   setAdminSettingsTab: (tab) => set({ adminSettingsTab: tab }),
   
@@ -1051,8 +1072,11 @@ export const useStore = create<StoreState>((set, get) => ({
         tasks: [...state.tasks.filter(candidate => candidate.id !== id), task],
         archivedTasks: state.archivedTasks.filter(candidate => candidate.id !== id)
       }));
-      const message = error?.message || "You do not have permission to archive this task.";
-      get().setAlertData({ message: `Error archiving task: ${message}`, type: 'error' });
+      if (error) console.error('Failed to archive task:', error);
+      get().setAlertData({
+        message: 'The task could not be archived. Please try again.',
+        type: 'error'
+      });
     } else {
       get().setAlertData({ message: 'Task moved to Archive.', type: 'success' });
     }
@@ -1098,8 +1122,11 @@ export const useStore = create<StoreState>((set, get) => ({
         ],
         archivedTasks: state.archivedTasks.filter(task => !taskIds.includes(task.id))
       }));
-      const message = error?.message || 'You do not have permission to archive one or more selected tasks.';
-      get().setAlertData({ message: `Error archiving tasks: ${message}`, type: 'error' });
+      if (error) console.error('Failed to archive tasks:', error);
+      get().setAlertData({
+        message: 'The selected tasks could not be archived. Please try again.',
+        type: 'error'
+      });
       return false;
     }
 
@@ -1170,6 +1197,45 @@ export const useStore = create<StoreState>((set, get) => ({
     }
 
     get().setAlertData({ message: 'Task permanently deleted.', type: 'success' });
+    return true;
+  },
+
+  permanentlyDeleteTasks: async (ids) => {
+    const uniqueIds = [...new Set(ids)];
+    const tasksToDelete = get().archivedTasks.filter(task => uniqueIds.includes(task.id));
+    const taskIds = tasksToDelete.map(task => task.id);
+    if (taskIds.length === 0) return false;
+
+    set(state => ({
+      archivedTasks: state.archivedTasks.filter(task => !taskIds.includes(task.id))
+    }));
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .delete()
+      .in('id', taskIds)
+      .not('deleted_at', 'is', null)
+      .select('id');
+
+    if (error || !data || data.length !== taskIds.length) {
+      set(state => ({
+        archivedTasks: [
+          ...state.archivedTasks.filter(task => !taskIds.includes(task.id)),
+          ...tasksToDelete
+        ]
+      }));
+      if (error) console.error('Failed to permanently delete archived tasks:', error);
+      get().setAlertData({
+        message: 'The selected archived tasks could not be deleted. Please try again.',
+        type: 'error'
+      });
+      return false;
+    }
+
+    get().setAlertData({
+      message: `${taskIds.length} archived task${taskIds.length === 1 ? '' : 's'} permanently deleted.`,
+      type: 'success'
+    });
     return true;
   },
 

@@ -9,6 +9,20 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS'
 };
 
+const DEFAULT_APP_URL = 'https://tasky-tko5.vercel.app/';
+
+const normalizeAppUrl = (value?: string) => {
+  try {
+    const url = new URL(value || DEFAULT_APP_URL);
+    url.pathname = '/';
+    url.search = '';
+    url.hash = '';
+    return url.toString();
+  } catch {
+    return DEFAULT_APP_URL;
+  }
+};
+
 type ReminderRequest = {
   task_id?: string;
   recipient_id?: string;
@@ -341,17 +355,18 @@ const sendReminderEmail = async ({
 
   const html = `
     <div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.6;">
-      <h2 style="margin-bottom: 8px;">Task reminder</h2>
+      <p style="margin: 0 0 8px; color: #4b46d8; font-size: 13px; font-weight: 700; text-transform: uppercase;">Task reminder</p>
+      <h2 style="margin: 0 0 16px;">${escapeHtml(task.title)}</h2>
       <p>Hello ${recipientName},</p>
-      <p>This is a reminder for your ${assignmentLabel}:</p>
+      <p>This is a reminder about the following ${assignmentLabel}:</p>
       <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin: 16px 0;">
-        <p><strong>Task:</strong> ${escapeHtml(task.title)}</p>
+        <p style="margin-top: 0;"><strong>Task:</strong> ${escapeHtml(task.title)}</p>
         <p><strong>Deadline:</strong> ${deadline}</p>
         <p><strong>Status:</strong> ${escapeHtml(task.status)}</p>
         <p><strong>Category:</strong> ${escapeHtml(task.category || 'General')}</p>
-        <p><strong>Description:</strong> ${escapeHtml(task.description || 'No additional details.')}</p>
+        <p style="margin-bottom: 0;"><strong>Description:</strong> ${escapeHtml(task.description || 'No additional details.')}</p>
       </div>
-      <p><a href="${escapeHtml(appUrl)}" style="color: #4b46d8;">Open the Tasky workspace</a></p>
+      <p><a href="${escapeHtml(appUrl)}" style="display: inline-block; padding: 10px 16px; border-radius: 6px; background: #4b46d8; color: #ffffff; font-weight: 700; text-decoration: none;">Open Tasky</a></p>
       <p>Best regards,<br />El Meraki Ops</p>
     </div>
   `;
@@ -619,7 +634,7 @@ Deno.serve(async (req) => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   const cronSecret = Deno.env.get('CRON_SECRET');
-  const appUrl = Deno.env.get('APP_URL') || 'https://xemslalhsxdqgzyfdtqf.supabase.co';
+  const appUrl = normalizeAppUrl(Deno.env.get('APP_URL'));
 
   if (!supabaseUrl || !serviceRoleKey) {
     return jsonResponse({ error: 'Supabase function secrets are not configured.' }, 500);

@@ -10,10 +10,14 @@ export const ArchiveView: React.FC = () => {
   const profiles = useStore(state => state.profiles);
   const restoreTask = useStore(state => state.restoreTask);
   const permanentlyDeleteTask = useStore(state => state.permanentlyDeleteTask);
+  const permanentlyDeleteTasks = useStore(state => state.permanentlyDeleteTasks);
   const [searchQuery, setSearchQuery] = useState('');
   const [restoringTaskId, setRestoringTaskId] = useState<string | null>(null);
   const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null);
   const [taskToDelete, setTaskToDelete] = useState<{ id: string; title: string } | null>(null);
+  const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
+  const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
   const filteredTasks = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -29,9 +33,28 @@ export const ArchiveView: React.FC = () => {
       ));
   }, [archivedTasks, searchQuery]);
 
+  const filteredTaskIds = filteredTasks.map(task => task.id);
+  const allFilteredSelected = filteredTaskIds.length > 0 &&
+    filteredTaskIds.every(id => selectedTaskIds.includes(id));
+
+  const toggleSelectAll = () => {
+    setSelectedTaskIds(currentIds => allFilteredSelected
+      ? currentIds.filter(id => !filteredTaskIds.includes(id))
+      : [...new Set([...currentIds, ...filteredTaskIds])]
+    );
+  };
+
+  const toggleTaskSelection = (taskId: string) => {
+    setSelectedTaskIds(currentIds => currentIds.includes(taskId)
+      ? currentIds.filter(id => id !== taskId)
+      : [...currentIds, taskId]
+    );
+  };
+
   const handleRestore = async (taskId: string) => {
     setRestoringTaskId(taskId);
     await restoreTask(taskId);
+    setSelectedTaskIds(currentIds => currentIds.filter(id => id !== taskId));
     setRestoringTaskId(null);
   };
 
@@ -43,8 +66,20 @@ export const ArchiveView: React.FC = () => {
     if (!taskToDelete) return;
 
     setDeletingTaskId(taskToDelete.id);
-    await permanentlyDeleteTask(taskToDelete.id);
+    const deleted = await permanentlyDeleteTask(taskToDelete.id);
+    if (deleted) {
+      setSelectedTaskIds(currentIds => currentIds.filter(id => id !== taskToDelete.id));
+    }
     setDeletingTaskId(null);
+  };
+
+  const confirmBulkDelete = async () => {
+    if (selectedTaskIds.length === 0) return;
+
+    setIsBulkDeleting(true);
+    const deleted = await permanentlyDeleteTasks(selectedTaskIds);
+    if (deleted) setSelectedTaskIds([]);
+    setIsBulkDeleting(false);
   };
 
   return (
@@ -67,7 +102,11 @@ export const ArchiveView: React.FC = () => {
         </div>
       </header>
 
-      <div style={{ position: 'relative', maxWidth: '420px', marginBottom: '1.25rem' }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1.25rem'
+      }}>
+      <div style={{ position: 'relative', flex: '1 1 300px', maxWidth: '420px' }}>
         <Search
           size={15}
           style={{
@@ -85,6 +124,39 @@ export const ArchiveView: React.FC = () => {
             background: 'var(--surface)', color: 'var(--text-1)', outline: 'none'
           }}
         />
+      </div>
+        {filteredTasks.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+            <label style={{
+              display: 'inline-flex', alignItems: 'center', gap: '0.45rem',
+              color: 'var(--text-3)', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer'
+            }}>
+              <input
+                type="checkbox"
+                checked={allFilteredSelected}
+                onChange={toggleSelectAll}
+              />
+              Select all ({filteredTasks.length})
+            </label>
+            <button
+              type="button"
+              onClick={() => setIsBulkDeleteOpen(true)}
+              disabled={selectedTaskIds.length === 0 || isBulkDeleting}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
+                padding: '0.62rem 0.9rem', borderRadius: 'var(--radius-md)',
+                background: 'rgba(248,113,113,0.12)', color: 'var(--danger)',
+                border: '1px solid rgba(248,113,113,0.24)',
+                fontWeight: 700, fontSize: '0.76rem',
+                cursor: selectedTaskIds.length === 0 || isBulkDeleting ? 'not-allowed' : 'pointer',
+                opacity: selectedTaskIds.length === 0 || isBulkDeleting ? 0.5 : 1
+              }}
+            >
+              <Trash2 size={14} />
+              Delete selected ({selectedTaskIds.length})
+            </button>
+          </div>
+        )}
       </div>
 
       {filteredTasks.length === 0 ? (
@@ -116,6 +188,13 @@ export const ArchiveView: React.FC = () => {
                   boxShadow: 'var(--shadow-sm)'
                 }}
               >
+                <input
+                  type="checkbox"
+                  checked={selectedTaskIds.includes(task.id)}
+                  onChange={() => toggleTaskSelection(task.id)}
+                  aria-label={`Select ${task.title}`}
+                  style={{ flexShrink: 0 }}
+                />
                 <div style={{ flex: '1 1 300px', minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
                     <h3 style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-1)' }}>
@@ -198,6 +277,15 @@ export const ArchiveView: React.FC = () => {
         title="Permanently delete task"
         message={`"${taskToDelete?.title || 'This task'}" will be permanently removed. This cannot be undone.`}
         confirmText={deletingTaskId ? 'Deleting...' : 'Delete permanently'}
+        type="danger"
+      />
+      <ConfirmationModal
+        isOpen={isBulkDeleteOpen}
+        onClose={() => setIsBulkDeleteOpen(false)}
+        onConfirm={confirmBulkDelete}
+        title="Permanently delete selected tasks"
+        message={`This will permanently delete ${selectedTaskIds.length} archived task${selectedTaskIds.length === 1 ? '' : 's'}. This cannot be undone.`}
+        confirmText={isBulkDeleting ? 'Deleting...' : 'Delete permanently'}
         type="danger"
       />
     </div>
