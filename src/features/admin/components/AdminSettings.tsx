@@ -1,11 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useStore } from '../../../store/useStore';
 import { isTaskAssignee } from '../../../lib/supabase';
-import { Plus, Trash2, Settings, Users, Layers, Tag, ShieldCheck, Mail, Send, Building2, Eye, Lock } from 'lucide-react';
+import { Plus, Trash2, Settings, Users, Layers, Tag, ShieldCheck, Mail, Send, Building2, Eye, Lock, KeyRound } from 'lucide-react';
 import { ConfirmationModal } from '../../../components/Shared/ConfirmationModal';
 import { AppSelect } from '../../../components/Shared/AppSelect';
 
 export const AdminSettings: React.FC = () => {
+  const temporaryPassword = 'ElMeraki@2026';
   const currentUser = useStore(s => s.currentUser);
   const profiles = useStore(s => s.profiles);
   const tasks = useStore(s => s.tasks);
@@ -23,12 +24,15 @@ export const AdminSettings: React.FC = () => {
   const addStatus = useStore(s => s.addStatus);
   const deleteStatus = useStore(s => s.deleteStatus);
   const inviteUser = useStore(s => s.inviteUser);
+  const resetUserPassword = useStore(s => s.resetUserPassword);
   const deleteUser = useStore(s => s.deleteUser);
   const sendEmployeeDeadlineReminders = useStore(s => s.sendEmployeeDeadlineReminders);
   const adminSettingsTab = useStore(s => s.adminSettingsTab);
 
   const [activeTab, setActiveTab] = useState<'users' | 'departments' | 'categories' | 'statuses'>(adminSettingsTab);
   const [inviteEmail, setInviteEmail] = useState('');
+  const [isInviting, setIsInviting] = useState(false);
+  const inviteInFlight = useRef(false);
   const [newDepartment, setNewDepartment] = useState('');
   const [newDepartmentColor, setNewDepartmentColor] = useState('#3b82f6');
   const [newCategory, setNewCategory] = useState('');
@@ -36,6 +40,7 @@ export const AdminSettings: React.FC = () => {
   const [newStatus, setNewStatus] = useState('');
   const [newStatusColor, setNewStatusColor] = useState('#818cf8');
   const [sendingReminderUserId, setSendingReminderUserId] = useState<string | null>(null);
+  const [resettingPasswordUserId, setResettingPasswordUserId] = useState<string | null>(null);
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -103,9 +108,27 @@ export const AdminSettings: React.FC = () => {
   };
 
   const handleInviteUser = async () => {
-    if (!inviteEmail.trim() || !inviteEmail.includes('@')) return;
-    await inviteUser(inviteEmail.trim());
-    setInviteEmail('');
+    const normalizedEmail = inviteEmail.trim().toLowerCase();
+    if (!normalizedEmail || !normalizedEmail.includes('@') || inviteInFlight.current) return;
+
+    inviteInFlight.current = true;
+    setIsInviting(true);
+    try {
+      const sent = await inviteUser(normalizedEmail);
+      if (sent) setInviteEmail('');
+    } finally {
+      inviteInFlight.current = false;
+      setIsInviting(false);
+    }
+  };
+
+  const handleResetUserPassword = async (userId: string) => {
+    setResettingPasswordUserId(userId);
+    try {
+      await resetUserPassword(userId);
+    } finally {
+      setResettingPasswordUserId(null);
+    }
   };
 
   const getRemindableTaskCount = (userId: string) => {
@@ -176,7 +199,7 @@ export const AdminSettings: React.FC = () => {
         {/* Users Tab */}
         {activeTab === 'users' && (
           <div>
-            <div style={{ 
+            <div className="invite-user-panel" style={{
               display: 'flex', gap: '0.75rem', marginBottom: '1.5rem', padding: '1.25rem', 
               background: 'var(--surface)', borderRadius: 'var(--radius-lg)', 
               border: '1px solid var(--border)', alignItems: 'flex-end'
@@ -188,12 +211,22 @@ export const AdminSettings: React.FC = () => {
                   placeholder="colleague@company.com"
                   value={inviteEmail}
                   onChange={e => setInviteEmail(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleInviteUser()}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleInviteUser();
+                    }
+                  }}
+                  disabled={isInviting}
                   style={{ width: '100%' }}
                 />
+                <div style={{ marginTop: '0.45rem', color: 'var(--text-4)', fontSize: '0.72rem' }}>
+                  Temporary password: <strong style={{ color: 'var(--text-2)' }}>{temporaryPassword}</strong>.
+                  The member must replace it after signing in.
+                </div>
               </div>
-              <button className="primary-btn" onClick={handleInviteUser} style={{ height: '40px', fontSize: '0.82rem' }} disabled={!inviteEmail}>
-                <Plus size={16} /> Send Invite
+              <button className="primary-btn" onClick={handleInviteUser} style={{ height: '40px', fontSize: '0.82rem' }} disabled={!inviteEmail.trim() || isInviting}>
+                <Plus size={16} /> {isInviting ? 'Sending...' : 'Send Invite'}
               </button>
             </div>
 
@@ -207,7 +240,7 @@ export const AdminSettings: React.FC = () => {
                   <th>Department</th>
                   <th>Role</th>
                   <th>Reminder</th>
-                  <th style={{ width: '40px' }}></th>
+                  <th style={{ width: '180px' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -310,24 +343,49 @@ export const AdminSettings: React.FC = () => {
                     </td>
                     <td>
                       {user.id !== currentUser.id && (
-                        <button 
-                          style={{ 
-                            color: 'var(--danger)', background: 'rgba(248,113,113,0.08)', 
-                            border: 'none', cursor: 'pointer', padding: '0.4rem', 
-                            borderRadius: 'var(--radius-sm)', transition: 'var(--transition)'
-                          }}
-                          onClick={() => {
-                            setConfirmModal({
-                              isOpen: true,
-                              title: 'Delete User',
-                              message: `Are you sure you want to delete user "${user.full_name}" and remove them from all tasks? This action cannot be undone.`,
-                              onConfirm: () => deleteUser(user.id)
-                            });
-                          }}
-                          title="Remove user"
-                        >
-                          <Trash2 size={15} />
-                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <button
+                            className="secondary-action-btn"
+                            disabled={resettingPasswordUserId === user.id}
+                            onClick={() => {
+                              setConfirmModal({
+                                isOpen: true,
+                                title: 'Reset Password',
+                                message: `Reset ${user.full_name}'s password to the temporary password ${temporaryPassword}? Their current password will stop working immediately.`,
+                                onConfirm: () => handleResetUserPassword(user.id)
+                              });
+                            }}
+                            title="Reset to temporary password"
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: '0.35rem',
+                              padding: '0.42rem 0.6rem', borderRadius: 'var(--radius-sm)',
+                              border: '1px solid var(--border)', background: 'var(--primary-light)',
+                              color: 'var(--primary)', fontSize: '0.72rem', fontWeight: 700,
+                              cursor: resettingPasswordUserId === user.id ? 'wait' : 'pointer'
+                            }}
+                          >
+                            <KeyRound size={14} />
+                            {resettingPasswordUserId === user.id ? 'Resetting...' : 'Reset'}
+                          </button>
+                          <button
+                            style={{
+                              color: 'var(--danger)', background: 'rgba(248,113,113,0.08)',
+                              border: 'none', cursor: 'pointer', padding: '0.4rem',
+                              borderRadius: 'var(--radius-sm)', transition: 'var(--transition)'
+                            }}
+                            onClick={() => {
+                              setConfirmModal({
+                                isOpen: true,
+                                title: 'Delete User',
+                                message: `Are you sure you want to delete user "${user.full_name}" and remove them from all tasks? This action cannot be undone.`,
+                                onConfirm: () => deleteUser(user.id)
+                              });
+                            }}
+                            title="Remove user"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>

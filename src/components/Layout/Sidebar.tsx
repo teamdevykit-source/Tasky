@@ -16,12 +16,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const toggleTheme = useStore(s => s.toggleTheme);
   const archivedTaskCount = useStore(state => state.archivedTasks.length);
   const ticketCount = useStore(state => state.ticketRequests.filter(ticket => ticket.status !== 'Approved' && ticket.status !== 'Rejected').length);
-  
-  if (!currentUser) return null;
   const getDashboardTasks = useStore(s => s.getDashboardTasks);
-  const taskCount = getDashboardTasks().length;
   const reminders = useStore(s => s.reminders);
+
+  if (!currentUser) return null;
+  const taskCount = getDashboardTasks().length;
   const isDark = theme === 'dark';
+  const navigate = (mode: Parameters<typeof setViewMode>[0]) => {
+    setViewMode(mode);
+    onClose();
+  };
 
   return (
     <>
@@ -85,7 +89,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         <nav className="nav-group">
           <button 
             className={`nav-item ${viewMode === 'dashboard' ? 'active' : ''}`}
-            onClick={() => setViewMode('dashboard')}
+            onClick={() => navigate('dashboard')}
           >
             <LayoutDashboard size={17} />
             <span>Dashboard</span>
@@ -93,7 +97,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           
           <button 
             className={`nav-item ${viewMode === 'my-tasks' ? 'active' : ''}`}
-            onClick={() => setViewMode('my-tasks')}
+            onClick={() => navigate('my-tasks')}
             style={{ position: 'relative' }}
           >
             <Lock size={17} />
@@ -116,7 +120,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
           <button 
             className={`nav-item ${viewMode === 'reminders' ? 'active' : ''}`}
-            onClick={() => setViewMode('reminders')}
+            onClick={() => navigate('reminders')}
             style={{ position: 'relative' }}
           >
             <Bell size={17} />
@@ -139,7 +143,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           {currentUser.role === 'Admin' && (
             <button
               className={`nav-item ${viewMode === 'recurring' ? 'active' : ''}`}
-              onClick={() => setViewMode('recurring')}
+              onClick={() => navigate('recurring')}
             >
               <Repeat size={17} />
               <span>Recurring Tasks</span>
@@ -148,7 +152,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
           <button 
             className={`nav-item ${viewMode === 'kanban' ? 'active' : ''}`}
-            onClick={() => setViewMode('kanban')}
+            onClick={() => navigate('kanban')}
           >
             <KanbanSquare size={17} />
             <span>Board View</span>
@@ -156,7 +160,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           
           <button 
             className={`nav-item ${viewMode === 'scrum' ? 'active' : ''}`}
-            onClick={() => setViewMode('scrum')}
+            onClick={() => navigate('scrum')}
           >
             <List size={17} />
             <span>List View</span>
@@ -166,7 +170,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             <>
               <button
                 className={`nav-item ${viewMode === 'tickets' ? 'active' : ''}`}
-                onClick={() => setViewMode('tickets')}
+                onClick={() => navigate('tickets')}
               >
                 <Ticket size={17} />
                 <span>Tickets</span>
@@ -186,14 +190,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
               </button>
               <button
                 className={`nav-item ${viewMode === 'settings' ? 'active' : ''}`}
-                onClick={() => setViewMode('settings')}
+                onClick={() => navigate('settings')}
               >
                 <Settings size={17} />
                 <span>Settings</span>
               </button>
               <button
                 className={`nav-item ${viewMode === 'archive' ? 'active' : ''}`}
-                onClick={() => setViewMode('archive')}
+                onClick={() => navigate('archive')}
               >
                 <Archive size={17} />
                 <span>Archive</span>
@@ -216,7 +220,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           {currentUser.role !== 'Admin' && (
             <button
               className={`nav-item ${viewMode === 'tickets' ? 'active' : ''}`}
-              onClick={() => setViewMode('tickets')}
+              onClick={() => navigate('tickets')}
             >
               <Ticket size={17} />
               <span>Request a Ticket</span>
@@ -274,7 +278,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
         {/* User Profile */}
         <div 
-          onClick={() => setViewMode('profile')}
+          onClick={() => navigate('profile')}
           className={`sidebar-user-section ${viewMode === 'profile' ? 'active' : ''}`}
           style={{ 
             display: 'flex', alignItems: 'center', gap: '0.625rem', 

@@ -33,6 +33,15 @@ const getReminderEmailErrorMessage = async (err: any) => {
   return message;
 };
 
+const getEdgeFunctionErrorMessage = async (err: any, fallback: string) => {
+  const context = err?.context;
+  if (context instanceof Response) {
+    const body = await context.clone().json().catch(() => null);
+    if (body?.error) return body.error;
+  }
+  return err?.message || fallback;
+};
+
 const isMissingReportSchedulesTable = (error: any) => (
   error?.code === 'PGRST205' ||
   error?.message?.includes("Could not find the table 'public.report_schedules'") ||
@@ -92,7 +101,8 @@ interface StoreState {
   updateUserRole: (userId: string, role: Profile['role']) => Promise<void>;
   updateUserJobTitle: (userId: string, jobTitle: string) => Promise<void>;
   updateUserDepartment: (userId: string, department: Department | null) => Promise<void>;
-  inviteUser: (email: string) => Promise<void>;
+  inviteUser: (email: string) => Promise<boolean>;
+  resetUserPassword: (userId: string) => Promise<boolean>;
   sendTaskReminderEmail: (taskId: string) => Promise<boolean>;
   sendEmployeeDeadlineReminders: (userId: string) => Promise<void>;
   sendReportEmailNow: () => Promise<boolean>;
@@ -354,7 +364,10 @@ export const useStore = create<StoreState>((set, get) => ({
   },
   viewMode: getInitialViewMode(),
   updatePassword: async (password) => {
-    const { error } = await supabase.auth.updateUser({ password });
+    const { error } = await supabase.auth.updateUser({
+      password,
+      data: { must_change_password: false }
+    });
     if (error) {
       set({ alertData: { message: error.message, type: 'error' } });
       throw error;
@@ -410,7 +423,12 @@ export const useStore = create<StoreState>((set, get) => ({
 
     // Handle invitation deep-link: We want them to stay logged in but we'll show a "finish" UI
     const params = new URLSearchParams(window.location.search);
-    const isInvited = (params.get('type') === 'signup' && !!session);
+    const isInvited = Boolean(
+      session && (
+        params.get('type') === 'signup' ||
+        session.user.user_metadata?.must_change_password === true
+      )
+    );
     if (isInvited) set({ isInvitedSession: true });
 
     if (!session) {
@@ -750,31 +768,56 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   inviteUser: async (email) => {
+    const normalizedEmail = email.trim().toLowerCase();
+
     try {
-      // 1. Check if email already exists in profiles (application users)
-      const { data: existing } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('email', email)
-        .maybeSingle();
-
-      if (existing) {
-        get().setAlertData({ message: `User with email ${email} is already in the workspace.`, type: 'error' });
-        return;
-      }
-
-      // 2. Send invitation via OTP / Magic Link
-      // We route them to origin/login explicitly to ensure they see the app entrance
-      const { error } = await supabase.auth.signInWithOtp({ 
-        email,
-        options: { 
-          emailRedirectTo: `${window.location.origin}?type=signup&email=${encodeURIComponent(email)}`,
+      const { error } = await supabase.functions.invoke('admin-user-password', {
+        body: {
+          action: 'invite',
+          email: normalizedEmail
         }
       });
       if (error) throw error;
-      get().setAlertData({ message: `Invitation sent to ${email} successfully!`, type: 'success' });
+
+      get().setAlertData({
+        message: `Account created and invitation sent to ${normalizedEmail}.`,
+        type: 'success'
+      });
+      await get().refreshData();
+      return true;
     } catch (err: any) {
-      get().setAlertData({ message: "Failed to invite: " + err.message, type: 'error' });
+      console.error('Invitation request failed:', err);
+      const message = await getEdgeFunctionErrorMessage(err, 'Unable to create the invited account.');
+      get().setAlertData({ message, type: 'error' });
+      return false;
+    }
+  },
+
+  resetUserPassword: async (userId) => {
+    const user = get().profiles.find(profile => profile.id === userId);
+    if (!user) return false;
+
+    try {
+      const { data, error } = await supabase.functions.invoke('admin-user-password', {
+        body: {
+          action: 'reset_password',
+          user_id: userId
+        }
+      });
+      if (error) throw error;
+
+      get().setAlertData({
+        message: data?.email_sent === false
+          ? `Password reset for ${user.full_name}. Share the temporary password manually.`
+          : `Password reset and emailed to ${user.full_name}.`,
+        type: 'success'
+      });
+      return true;
+    } catch (err: any) {
+      console.error('Password reset failed:', err);
+      const message = await getEdgeFunctionErrorMessage(err, 'Unable to reset this password.');
+      get().setAlertData({ message, type: 'error' });
+      return false;
     }
   },
 

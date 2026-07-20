@@ -3222,3 +3222,270 @@ textarea:focus {
 .task-card {
   overflow: visible !important;
 }
+
+/* ==========================================
+   MOBILE LAYOUT & SCROLLING
+========================================== */
+html {
+  min-width: 320px;
+  min-height: 100%;
+  scroll-behavior: smooth;
+}
+
+@media (max-width: 1024px) {
+  html,
+  body,
+  #root {
+    width: 100%;
+    min-height: 100%;
+    overflow-x: clip;
+  }
+
+  body {
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .app-layout {
+    width: 100%;
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+
+  .main-content {
+    width: 100%;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow: visible;
+    padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+  }
+
+  .mobile-header {
+    top: 0;
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+  }
+
+  .sidebar {
+    height: 100vh;
+    height: 100dvh;
+    max-width: calc(100vw - 2.5rem);
+    padding-top: max(1rem, env(safe-area-inset-top));
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .sidebar-backdrop {
+    height: 100vh;
+    height: 100dvh;
+  }
+
+  .animate-fadeIn,
+  .dashboard-page,
+  .settings-page,
+  .board-container,
+  .column,
+  .dashboard-panel,
+  .scrum-table-wrapper {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .scrum-table-wrapper,
+  .settings-table-wrapper {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+@media (max-width: 768px) {
+  .invite-user-panel {
+    align-items: stretch !important;
+    flex-direction: column;
+  }
+
+  .invite-user-panel > .primary-btn {
+    width: 100%;
+  }
+
+  .main-content {
+    padding-left: max(0.75rem, env(safe-area-inset-left));
+    padding-right: max(0.75rem, env(safe-area-inset-right));
+  }
+
+  .mobile-header {
+    margin-inline: -0.75rem;
+    padding-left: max(0.75rem, env(safe-area-inset-left));
+    padding-right: max(0.75rem, env(safe-area-inset-right));
+  }
+
+  .mobile-menu-btn,
+  .mobile-close-btn,
+  .nav-item,
+  .primary-btn,
+  .secondary-btn,
+  .toggle-btn,
+  .app-select-trigger,
+  .app-date-trigger,
+  input,
+  select,
+  textarea {
+    min-height: 44px;
+  }
+
+  .animate-fadeIn > header,
+  .dashboard-page > header {
+    margin-bottom: 1rem !important;
+  }
+
+  .animate-fadeIn > header > div,
+  .dashboard-page > header > div:first-child {
+    width: 100%;
+    align-items: stretch !important;
+    flex-direction: column;
+  }
+
+  .dashboard-page > header > div:first-child > div:last-child {
+    display: grid !important;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .dashboard-page > div[style*="minmax(200px"],
+  .dashboard-page > div[style*="minmax(350px"],
+  .animate-fadeIn > div[style*="minmax(350px"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 0.875rem !important;
+  }
+
+  .dashboard-panel {
+    padding: 1rem !important;
+  }
+
+  .dashboard-category-card {
+    flex-basis: 100% !important;
+  }
+
+  .filter-select-group,
+  .filter-select-group .app-select,
+  .filter-select-group .app-select-trigger {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .board-container {
+    display: flex;
+    flex-direction: row;
+    gap: 0.875rem;
+    margin-inline: -0.75rem;
+    padding: 0 0.75rem 0.75rem;
+    max-width: calc(100% + 1.5rem);
+    overflow-x: auto;
+    overflow-y: visible;
+    scroll-padding-inline: 0.75rem;
+    scroll-snap-type: x proximity;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  .column {
+    width: min(86vw, 360px);
+    min-width: min(86vw, 360px);
+    flex: 0 0 min(86vw, 360px);
+    padding: 0.875rem;
+    scroll-snap-align: start;
+  }
+
+  .modal-overlay {
+    align-items: flex-end;
+    overflow-y: auto;
+    padding: max(0.5rem, env(safe-area-inset-top)) 0 0;
+    overscroll-behavior: contain;
+  }
+
+  .modal-content {
+    width: 100%;
+    max-width: none;
+    max-height: calc(100vh - max(0.5rem, env(safe-area-inset-top)));
+    max-height: calc(100dvh - max(0.5rem, env(safe-area-inset-top)));
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+    overflow-x: hidden;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .modal-grid,
+  .modal-detail-grid {
+    height: auto !important;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .modal-grid > *,
+  .modal-detail-grid > * {
+    min-width: 0;
+  }
+
+  .app-select-menu,
+  .app-date-popover {
+    left: max(0.75rem, env(safe-area-inset-left));
+    right: max(0.75rem, env(safe-area-inset-right));
+    bottom: max(0.75rem, env(safe-area-inset-bottom));
+    max-height: 65vh;
+    max-height: 65dvh;
+  }
+}
+
+@media (max-width: 480px) {
+  .main-content {
+    padding-inline: 0.625rem;
+  }
+
+  .mobile-header {
+    margin-inline: -0.625rem;
+    padding-inline: 0.625rem;
+  }
+
+  .board-container {
+    margin-inline: -0.625rem;
+    padding-inline: 0.625rem;
+    max-width: calc(100% + 1.25rem);
+    scroll-padding-inline: 0.625rem;
+  }
+
+  .mobile-brand span {
+    font-size: 0.82rem;
+  }
+
+  .task-card,
+  .metric-card,
+  .dashboard-panel,
+  .recurring-task-row {
+    border-radius: var(--radius-md) !important;
+  }
+
+  .team-directory-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .team-directory-see-all {
+    width: 100%;
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  .scrum-table {
+    min-width: 640px;
+  }
+}
