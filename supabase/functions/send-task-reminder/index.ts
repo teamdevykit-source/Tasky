@@ -26,6 +26,11 @@ const normalizeAppUrl = (value?: string) => {
 type ReminderRequest = {
   task_id?: string;
   recipient_id?: string;
+  recipient_ids?: string[];
+  assigned_by_id?: string;
+  notification_type?: 'reminder' | 'assignment';
+  manual_reminder?: boolean;
+  deadline_digest_recipient_id?: string;
   process_due_reminders?: boolean;
   process_due_recurring_tasks?: boolean;
   send_report?: boolean;
@@ -34,6 +39,7 @@ type ReminderRequest = {
 
 type TaskRecord = {
   id: string;
+  created_at: string;
   title: string;
   description: string | null;
   assignee_id: string | null;
@@ -331,62 +337,256 @@ const sendReminderEmail = async ({
   const subject = task.is_self_task
     ? `Private task reminder: ${task.title}`
     : `Task reminder: ${task.title}`;
-  const recipientName = emailableRecipients.length === 1
-    ? escapeHtml(emailableRecipients[0].full_name || 'there')
-    : 'team';
   const assignmentLabel = task.is_self_task ? 'private task' : 'assigned task';
-  const text = [
-    `Hello ${emailableRecipients.length === 1 ? emailableRecipients[0].full_name || 'there' : 'team'},`,
-    '',
-    `This is a reminder for your ${assignmentLabel}:`,
-    '',
+  const results = await Promise.allSettled(emailableRecipients.map(async (recipient: any) => {
+    const recipientName = recipient.full_name || 'there';
+    const text = [
+      `Hello ${recipientName},`,
+      '',
+      `This is a reminder for your ${assignmentLabel}:`,
+      '',
+      `Task: ${task.title}`,
+      `Deadline: ${deadline}`,
+      `Status: ${task.status}`,
+      `Category: ${task.category || 'General'}`,
+      '',
+      task.description ? `Description: ${task.description}` : 'Description: No additional details.',
+      '',
+      `Open the Tasky workspace: ${appUrl}`,
+      '',
+      'Best regards,',
+      'El Meraki Ops'
+    ].join('\n');
+    const html = `
+      <div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.6;">
+        <p style="margin: 0 0 8px; color: #4b46d8; font-size: 13px; font-weight: 700; text-transform: uppercase;">Task reminder</p>
+        <h2 style="margin: 0 0 16px;">${escapeHtml(task.title)}</h2>
+        <p>Hello ${escapeHtml(recipientName)},</p>
+        <p>This is a reminder about the following ${assignmentLabel}:</p>
+        <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin: 16px 0;">
+          <p style="margin-top: 0;"><strong>Task:</strong> ${escapeHtml(task.title)}</p>
+          <p><strong>Deadline:</strong> ${escapeHtml(deadline)}</p>
+          <p><strong>Status:</strong> ${escapeHtml(task.status)}</p>
+          <p><strong>Category:</strong> ${escapeHtml(task.category || 'General')}</p>
+          <p style="margin-bottom: 0;"><strong>Description:</strong> ${escapeHtml(task.description || 'No additional details.')}</p>
+        </div>
+        <p><a href="${escapeHtml(appUrl)}" style="display: inline-block; padding: 10px 16px; border-radius: 6px; background: #4b46d8; color: #ffffff; font-weight: 700; text-decoration: none;">Open Tasky</a></p>
+        <p>Best regards,<br />El Meraki Ops</p>
+      </div>
+    `;
+    const result = await sendSmtpMail({ to: [recipient.email], subject, text, html });
+    return { email: recipient.email, messageId: result.messageId };
+  }));
+
+  const sent = results
+    .filter((result): result is PromiseFulfilledResult<{ email: string; messageId: string }> => (
+      result.status === 'fulfilled'
+    ))
+    .map(result => result.value);
+  const failed = results.filter(result => result.status === 'rejected');
+  if (failed.length > 0) {
+    throw new Error(`Could not send ${failed.length} of ${results.length} reminder emails.`);
+  }
+
+  return { recipients: sent.map(result => result.email), messageIds: sent.map(result => result.messageId) };
+};
+
+const sendAssignmentEmails = async ({
+  supabase,
+  appUrl,
+  task,
+  assignedById,
+  recipientIds
+}: {
+  supabase: any;
+  appUrl: string;
+  task: TaskRecord;
+  assignedById: string;
+  recipientIds?: string[];
+}) => {
+  const assigneeIds = getAssigneeIds(task);
+  const requestedRecipientIds = recipientIds?.length
+    ? [...new Set(recipientIds)]
+    : assigneeIds;
+
+  if (requestedRecipientIds.length === 0) {
+    throw new Error('Task has no assignment recipient.');
+  }
+
+  if (requestedRecipientIds.some(id => !assigneeIds.includes(id))) {
+    throw new Error('An assignment recipient is not assigned to this task.');
+  }
+
+  const [{ data: recipients, error: recipientsError }, { data: assignedBy }] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('id, email, full_name')
+      .in('id', requestedRecipientIds),
+    supabase
+      .from('profiles')
+      .select('full_name, email')
+      .eq('id', assignedById)
+      .maybeSingle()
+  ]);
+
+  if (recipientsError) {
+    throw new Error(`Unable to load assignment recipients: ${recipientsError.message}`);
+  }
+
+  const emailableRecipients = (recipients || []).filter((recipient: any) => recipient.email);
+  if (emailableRecipients.length === 0) {
+    throw new Error('Assignment recipients do not have email addresses.');
+  }
+  if (emailableRecipients.length !== requestedRecipientIds.length) {
+    throw new Error('One or more assignment recipients do not have email addresses.');
+  }
+
+  const assignedByName = assignedBy?.full_name || assignedBy?.email || 'an administrator';
+  const subject = `New task assigned: ${task.title}`;
+  const details = [
     `Task: ${task.title}`,
-    `Deadline: ${deadline}`,
+    `Description: ${task.description || 'No additional details.'}`,
+    `Priority: ${task.priority || 'Not specified'}`,
     `Status: ${task.status}`,
     `Category: ${task.category || 'General'}`,
-    '',
-    task.description ? `Description: ${task.description}` : 'Description: No additional details.',
-    '',
-    `Open the Tasky workspace: ${appUrl}`,
-    '',
-    'Best regards,',
-    'El Meraki Ops'
-  ].join('\n');
+    `Start date: ${formatDate(task.start_date)}`,
+    `Deadline: ${formatDate(task.end_date)}`,
+    `Assigned by: ${assignedByName}`
+  ];
 
-  const html = `
-    <div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.6;">
-      <p style="margin: 0 0 8px; color: #4b46d8; font-size: 13px; font-weight: 700; text-transform: uppercase;">Task reminder</p>
-      <h2 style="margin: 0 0 16px;">${escapeHtml(task.title)}</h2>
-      <p>Hello ${recipientName},</p>
-      <p>This is a reminder about the following ${assignmentLabel}:</p>
-      <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin: 16px 0;">
-        <p style="margin-top: 0;"><strong>Task:</strong> ${escapeHtml(task.title)}</p>
-        <p><strong>Deadline:</strong> ${deadline}</p>
-        <p><strong>Status:</strong> ${escapeHtml(task.status)}</p>
-        <p><strong>Category:</strong> ${escapeHtml(task.category || 'General')}</p>
-        <p style="margin-bottom: 0;"><strong>Description:</strong> ${escapeHtml(task.description || 'No additional details.')}</p>
+  const results = await Promise.allSettled(emailableRecipients.map(async (recipient: any) => {
+    const recipientName = recipient.full_name || 'there';
+    const text = [
+      `Hello ${recipientName},`,
+      '',
+      'A new task has been assigned to you.',
+      '',
+      ...details,
+      '',
+      `Open the Tasky workspace: ${appUrl}`,
+      '',
+      'Best regards,',
+      'El Meraki Ops'
+    ].join('\n');
+    const html = `
+      <div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.6;">
+        <p style="margin: 0 0 8px; color: #4b46d8; font-size: 13px; font-weight: 700; text-transform: uppercase;">New task assignment</p>
+        <h2 style="margin: 0 0 16px;">${escapeHtml(task.title)}</h2>
+        <p>Hello ${escapeHtml(recipientName)},</p>
+        <p><strong>${escapeHtml(assignedByName)}</strong> assigned a new task to you.</p>
+        <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin: 16px 0;">
+          <p style="margin-top: 0;"><strong>Task:</strong> ${escapeHtml(task.title)}</p>
+          <p><strong>Description:</strong> ${escapeHtml(task.description || 'No additional details.')}</p>
+          <p><strong>Priority:</strong> ${escapeHtml(task.priority || 'Not specified')}</p>
+          <p><strong>Status:</strong> ${escapeHtml(task.status)}</p>
+          <p><strong>Category:</strong> ${escapeHtml(task.category || 'General')}</p>
+          <p><strong>Start date:</strong> ${escapeHtml(formatDate(task.start_date))}</p>
+          <p style="margin-bottom: 0;"><strong>Deadline:</strong> ${escapeHtml(formatDate(task.end_date))}</p>
+        </div>
+        <p><a href="${escapeHtml(appUrl)}" style="display: inline-block; padding: 10px 16px; border-radius: 6px; background: #4b46d8; color: #ffffff; font-weight: 700; text-decoration: none;">Open Tasky</a></p>
+        <p>Best regards,<br />El Meraki Ops</p>
       </div>
-      <p><a href="${escapeHtml(appUrl)}" style="display: inline-block; padding: 10px 16px; border-radius: 6px; background: #4b46d8; color: #ffffff; font-weight: 700; text-decoration: none;">Open Tasky</a></p>
-      <p>Best regards,<br />El Meraki Ops</p>
-    </div>
-  `;
+    `;
 
-  try {
     const result = await sendSmtpMail({
-      to: emailableRecipients.map((recipient: any) => recipient.email),
+      to: [recipient.email],
       subject,
       text,
       html
     });
 
-    return {
-      recipients: emailableRecipients.map((recipient: any) => recipient.email),
-      messageId: result.messageId
-    };
-  } catch (error: any) {
-    const providerMessage = error.message || 'Unknown provider error';
-    throw new Error(`Mail provider rejected the reminder email: ${providerMessage}`);
+    return { email: recipient.email, messageId: result.messageId };
+  }));
+
+  const sent = results
+    .filter((result): result is PromiseFulfilledResult<{ email: string; messageId: string }> => (
+      result.status === 'fulfilled'
+    ))
+    .map(result => result.value);
+  const failed = results.filter(result => result.status === 'rejected');
+
+  if (failed.length > 0) {
+    throw new Error(`Could not send ${failed.length} of ${results.length} assignment emails.`);
   }
+
+  return { recipients: sent.map(result => result.email), messageIds: sent.map(result => result.messageId) };
+};
+
+const sendDeadlineDigest = async (supabase: any, appUrl: string, recipientId: string) => {
+  const [{ data: recipient, error: recipientError }, { data: tasks, error: tasksError }] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('id, email, full_name')
+      .eq('id', recipientId)
+      .maybeSingle(),
+    supabase
+      .from('tasks')
+      .select('id, title, assignee_id, assignee_ids, status, priority, category, end_date, is_self_task')
+      .is('deleted_at', null)
+      .eq('is_self_task', false)
+      .neq('status', 'Done')
+      .gt('end_date', new Date().toISOString())
+      .order('end_date', { ascending: true })
+  ]);
+
+  if (recipientError || !recipient?.email) {
+    throw new Error('The selected employee does not have an email address.');
+  }
+  if (tasksError) throw new Error(`Unable to load employee deadlines: ${tasksError.message}`);
+
+  const assignedTasks = (tasks || []).filter((task: TaskRecord) => getAssigneeIds(task).includes(recipientId));
+  if (assignedTasks.length === 0) {
+    throw new Error('The selected employee has no active tasks with future deadlines.');
+  }
+
+  const recipientName = recipient.full_name || 'there';
+  const textRows = assignedTasks.flatMap((task: TaskRecord, index: number) => [
+    `${index + 1}. ${task.title}`,
+    `   Deadline: ${formatDate(task.end_date)}`,
+    `   Status: ${task.status}`,
+    `   Priority: ${task.priority || 'Not specified'}`,
+    `   Category: ${task.category || 'General'}`
+  ]);
+  const htmlRows = assignedTasks.map((task: TaskRecord) => `
+    <div style="border:1px solid #e5e7eb;border-radius:8px;padding:14px;margin:10px 0;">
+      <strong>${escapeHtml(task.title)}</strong>
+      <div style="margin-top:6px;color:#4b5563;font-size:14px;">
+        Deadline: ${escapeHtml(formatDate(task.end_date))}<br />
+        Status: ${escapeHtml(task.status)} · Priority: ${escapeHtml(task.priority || 'Not specified')} ·
+        Category: ${escapeHtml(task.category || 'General')}
+      </div>
+    </div>
+  `).join('');
+
+  const result = await sendSmtpMail({
+    to: [recipient.email],
+    subject: `Task deadline summary (${assignedTasks.length})`,
+    text: [
+      `Hello ${recipientName},`,
+      '',
+      `Here is your summary of ${assignedTasks.length} active task deadline${assignedTasks.length === 1 ? '' : 's'}:`,
+      '',
+      ...textRows,
+      '',
+      `Open the Tasky workspace: ${appUrl}`,
+      '',
+      'Best regards,',
+      'El Meraki Ops'
+    ].join('\n'),
+    html: `
+      <div style="font-family:Arial,sans-serif;color:#111827;line-height:1.6;">
+        <p style="color:#4b46d8;font-size:13px;font-weight:700;text-transform:uppercase;">Deadline summary</p>
+        <h2>Your active task deadlines</h2>
+        <p>Hello ${escapeHtml(recipientName)},</p>
+        <p>Here is your summary of ${assignedTasks.length} active task deadline${assignedTasks.length === 1 ? '' : 's'}.</p>
+        ${htmlRows}
+        <p><a href="${escapeHtml(appUrl)}" style="display:inline-block;padding:10px 16px;border-radius:6px;background:#4b46d8;color:#fff;font-weight:700;text-decoration:none;">Open Tasky</a></p>
+        <p>Best regards,<br />El Meraki Ops</p>
+      </div>
+    `
+  });
+
+  return { recipient: recipient.email, taskCount: assignedTasks.length, messageId: result.messageId };
 };
 
 const sendReportEmail = async (supabase: any, appUrl: string) => {
@@ -486,8 +686,8 @@ const sendReportEmail = async (supabase: any, appUrl: string) => {
   ];
 
   const sendToAdmins = async (recipients: string[]) => {
-    const result = await sendSmtpMail({
-      to: recipients,
+    const results = await Promise.all(recipients.map(recipient => sendSmtpMail({
+      to: [recipient],
       subject: `Employee Summary Report - ${now}`,
       text: `Hello,\n\nPlease find attached the employee summary report for ${now}.\n\nGenerated by El Meraki Ops`,
       html: `<div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.6;">
@@ -503,14 +703,14 @@ const sendReportEmail = async (supabase: any, appUrl: string) => {
         encoding: 'base64',
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       }]
-    });
+    })));
 
-    return result;
+    return results;
   };
 
   try {
-    const result = await sendToAdmins(adminEmails);
-    return { recipientCount: adminEmails.length, messageId: result.messageId };
+    const results = await sendToAdmins(adminEmails);
+    return { recipientCount: adminEmails.length, messageIds: results.map(result => result.messageId) };
   } catch (error: any) {
     const providerMessage = error.message || 'Unknown';
     throw new Error(`Mail provider rejected the report: ${providerMessage}`);
@@ -546,7 +746,6 @@ const processDueRecurringTasks = async (supabase: any, appUrl: string) => {
   }
 
   let created = 0;
-  let immediateReminderEmails = 0;
   const failures: { task_id: string; error: string }[] = [];
 
   for (const template of (dueTemplates || []) as TaskRecord[]) {
@@ -577,15 +776,9 @@ const processDueRecurringTasks = async (supabase: any, appUrl: string) => {
       if (!claimedTemplate) continue;
 
       const occurrence = buildRecurringTaskOccurrence(template, occurrenceAt, defaultStatus);
-      const { data: createdTask, error: insertError } = await supabase
+      const { error: insertError } = await supabase
         .from('tasks')
-        .insert([occurrence])
-        .select(
-          'id, title, description, assignee_id, assignee_ids, creator_id, status, priority, category, ' +
-          'observers, is_self_task, start_date, end_date, reminder_at, reminder_sent_at, is_recurring, ' +
-          'recurrence_type, recurrence_time, recurrence_day, next_recurrence_at, parent_task_id'
-        )
-        .single();
+        .insert([occurrence]);
 
       if (insertError) {
         await supabase
@@ -597,10 +790,6 @@ const processDueRecurringTasks = async (supabase: any, appUrl: string) => {
 
       created += 1;
 
-      if (!createdTask.reminder_at) {
-        await sendReminderEmail({ supabase, appUrl, task: createdTask as TaskRecord });
-        immediateReminderEmails += 1;
-      }
     } catch (error: any) {
       failures.push({ task_id: template.id, error: error.message || 'Unknown error' });
     }
@@ -610,7 +799,6 @@ const processDueRecurringTasks = async (supabase: any, appUrl: string) => {
     success: failures.length === 0,
     claimed: dueTemplates?.length || 0,
     created,
-    immediateReminderEmails,
     failures
   };
 };
@@ -647,6 +835,45 @@ Deno.serve(async (req) => {
     }
   });
 
+  if (payload.notification_type === 'assignment' && req.headers.get('x-cron-secret')) {
+    if (!cronSecret || req.headers.get('x-cron-secret') !== cronSecret) {
+      return jsonResponse({ error: 'Invalid cron secret.' }, 401);
+    }
+    if (!payload.task_id) return jsonResponse({ error: 'task_id is required.' }, 400);
+
+    const { data: task, error: taskError } = await supabase
+      .from('tasks')
+      .select(
+        'id, title, description, assignee_id, assignee_ids, creator_id, status, priority, category, ' +
+        'start_date, end_date, is_self_task'
+      )
+      .eq('id', payload.task_id)
+      .maybeSingle();
+
+    if (taskError || !task) return jsonResponse({ error: 'Task not found.' }, 404);
+    if (task.is_self_task) return jsonResponse({ success: true, recipients: [] });
+
+    try {
+      const result = await sendAssignmentEmails({
+        supabase,
+        appUrl,
+        task: task as TaskRecord,
+        assignedById: payload.assigned_by_id || task.creator_id,
+        recipientIds: payload.recipient_ids
+      });
+      return jsonResponse({
+        success: true,
+        provider: 'smtp',
+        notification_type: 'assignment',
+        task_id: task.id,
+        recipients: result.recipients,
+        message_ids: result.messageIds
+      });
+    } catch (error: any) {
+      return jsonResponse({ error: error.message || 'Unable to send assignment email.' }, 502);
+    }
+  }
+
   if (payload.process_due_recurring_tasks) {
     if (!cronSecret || req.headers.get('x-cron-secret') !== cronSecret) {
       return jsonResponse({ error: 'Invalid cron secret.' }, 401);
@@ -677,20 +904,35 @@ Deno.serve(async (req) => {
     for (const task of (dueTasks || []) as TaskRecord[]) {
       try {
         await sendReminderEmail({ supabase, appUrl, task });
-        await supabase
+        const { error: markError } = await supabase
           .from('tasks')
           .update({
             reminder_sent_at: new Date().toISOString(),
             reminder_claimed_at: null
           })
           .eq('id', task.id);
+
+        if (markError) {
+          failures.push({
+            task_id: task.id,
+            error: `Email sent, but delivery could not be recorded: ${markError.message}`
+          });
+          continue;
+        }
+
         sent += 1;
       } catch (error: any) {
-        await supabase
+        const { error: releaseError } = await supabase
           .from('tasks')
           .update({ reminder_claimed_at: null })
           .eq('id', task.id);
-        failures.push({ task_id: task.id, error: error.message || 'Unknown error' });
+        failures.push({
+          task_id: task.id,
+          error: [
+            error.message || 'Unknown error',
+            releaseError ? `Claim release failed: ${releaseError.message}` : null
+          ].filter(Boolean).join('; ')
+        });
       }
     }
 
@@ -764,6 +1006,30 @@ Deno.serve(async (req) => {
     }
   }
 
+  if (payload.deadline_digest_recipient_id) {
+    const jwt = (req.headers.get('Authorization') || '').replace('Bearer ', '');
+    if (!jwt) return jsonResponse({ error: 'Missing authorization token.' }, 401);
+
+    const { data: authUser, error: authError } = await supabase.auth.getUser(jwt);
+    if (authError || !authUser.user) return jsonResponse({ error: 'Invalid authorization token.' }, 401);
+
+    const { data: requesterRole } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', authUser.user.id)
+      .maybeSingle();
+    if (requesterRole?.role !== 'Admin') {
+      return jsonResponse({ error: 'Only admins can send deadline digests.' }, 403);
+    }
+
+    try {
+      const result = await sendDeadlineDigest(supabase, appUrl, payload.deadline_digest_recipient_id);
+      return jsonResponse({ success: true, ...result });
+    } catch (error: any) {
+      return jsonResponse({ error: error.message || 'Unable to send deadline digest.' }, 502);
+    }
+  }
+
   if (!payload.task_id) {
     return jsonResponse({ error: 'task_id is required.' }, 400);
   }
@@ -786,7 +1052,10 @@ Deno.serve(async (req) => {
       .maybeSingle(),
     supabase
       .from('tasks')
-      .select('id, title, description, assignee_id, assignee_ids, creator_id, status, category, end_date, is_self_task')
+      .select(
+        'id, created_at, title, description, assignee_id, assignee_ids, creator_id, status, priority, ' +
+        'category, start_date, end_date, reminder_at, parent_task_id, is_self_task'
+      )
       .eq('id', payload.task_id)
       .maybeSingle()
   ]);
@@ -804,7 +1073,43 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: 'You do not have permission to send this reminder.' }, 403);
   }
 
+  if (payload.notification_type === 'assignment' && !isAdmin && !isTaskCreator) {
+    return jsonResponse({ error: 'Only an admin or the task creator can send assignment emails.' }, 403);
+  }
+
+  const isFreshRecurringOccurrence = Boolean(
+    task.parent_task_id &&
+    !task.reminder_at &&
+    Date.now() - new Date(task.created_at).getTime() < 10 * 60 * 1000
+  );
+  if (!payload.manual_reminder && isFreshRecurringOccurrence) {
+    return jsonResponse({
+      success: true,
+      suppressed: true,
+      reason: 'Assignment notification already queued for this recurring occurrence.'
+    });
+  }
+
   try {
+    if (payload.notification_type === 'assignment') {
+      const result = await sendAssignmentEmails({
+        supabase,
+        appUrl,
+        task: task as TaskRecord,
+        assignedById: authUser.user.id,
+        recipientIds: payload.recipient_ids
+      });
+
+      return jsonResponse({
+        success: true,
+        provider: 'smtp',
+        notification_type: 'assignment',
+        task_id: task.id,
+        recipients: result.recipients,
+        message_ids: result.messageIds
+      });
+    }
+
     const result = await sendReminderEmail({
       supabase,
       appUrl,
@@ -817,7 +1122,7 @@ Deno.serve(async (req) => {
       provider: 'smtp',
       task_id: task.id,
       recipients: result.recipients,
-      message_id: result.messageId
+      message_ids: result.messageIds
     });
   } catch (error: any) {
     return jsonResponse({ error: error.message || 'Unable to send reminder email.' }, 502);

@@ -333,30 +333,6 @@ export const useStore = create<StoreState>((set, get) => ({
           ]
         }));
 
-        if (!createdTask.reminder_at) {
-          try {
-            const { error: reminderError } = await supabase.functions.invoke('send-task-reminder', {
-              body: { task_id: createdTask.id }
-            });
-
-            if (reminderError) throw reminderError;
-
-            get().setAlertData({
-              message: `Recurring task "${createdTask.title}" is back to ${defaultStatus}. Reminder email sent.`,
-              type: 'success'
-            });
-          } catch (err: any) {
-            const message = await getReminderEmailErrorMessage(err);
-            console.warn('Recurring task email reminder failed:', err);
-            const isResendTestingLimit = message.includes('You can only send testing emails');
-            get().setAlertData({
-              message: isResendTestingLimit
-                ? 'Recurring task was created, but Resend is in testing mode. Verify a domain or send only to your Resend account email.'
-                : `Recurring task was created, but email failed: ${message}`,
-              type: 'error'
-            });
-          }
-        }
       }
     } finally {
       _isProcessingRecurringTasks = false;
@@ -521,7 +497,6 @@ export const useStore = create<StoreState>((set, get) => ({
 
         set({ isLoaded: true });
         get().checkTaskDeadlines();
-        get().processDueRecurringTasks();
         if (isSilent) {
           // If silent, just update parts of state if needed, but usually initialize has set them already
         }
@@ -577,7 +552,6 @@ export const useStore = create<StoreState>((set, get) => ({
     setInterval(() => {
       get().refreshData?.();
       get().checkTaskDeadlines?.();
-      get().processDueRecurringTasks?.();
     }, 20000); 
 
     // Realtime subscriptions (non-blocking)
@@ -642,7 +616,6 @@ export const useStore = create<StoreState>((set, get) => ({
             return state;
           });
           get().checkTaskDeadlines();
-          get().processDueRecurringTasks();
         })
         .subscribe();
 
@@ -696,6 +669,7 @@ export const useStore = create<StoreState>((set, get) => ({
       }
         set((state) => ({ tasks: [...state.tasks, data] }));
         get().refreshData(); // Sync for non-realtime users
+
         return { success: true, data };
       return { success: false };
     } catch (err: any) {
@@ -724,6 +698,7 @@ export const useStore = create<StoreState>((set, get) => ({
       get().setAlertData({ message: "Error updating task: " + error.message, type: 'error' });
     } else {
       get().refreshData(); // Sync for non-realtime users
+
     }
   },
 
@@ -808,7 +783,7 @@ export const useStore = create<StoreState>((set, get) => ({
 
       get().setAlertData({
         message: data?.email_sent === false
-          ? `Password reset for ${user.full_name}. Share the temporary password manually.`
+          ? `Password reset for ${user.full_name}. Temporary password: ${data?.temporary_password}`
           : `Password reset and emailed to ${user.full_name}.`,
         type: 'success'
       });
@@ -870,7 +845,7 @@ export const useStore = create<StoreState>((set, get) => ({
 
     try {
       const { error } = await supabase.functions.invoke('send-task-reminder', {
-        body: { task_id: taskId }
+        body: { task_id: taskId, manual_reminder: true }
       });
 
       if (error) throw error;
@@ -917,34 +892,20 @@ export const useStore = create<StoreState>((set, get) => ({
       return;
     }
 
-    let sentCount = 0;
-    let lastError = '';
+    try {
+      const { error } = await supabase.functions.invoke('send-task-reminder', {
+        body: { deadline_digest_recipient_id: userId }
+      });
+      if (error) throw error;
 
-    for (const task of remindableTasks) {
-      try {
-        const { error } = await supabase.functions.invoke('send-task-reminder', {
-          body: { task_id: task.id, recipient_id: userId }
-        });
-
-        if (error) throw error;
-        sentCount += 1;
-      } catch (err: any) {
-        lastError = await getReminderEmailErrorMessage(err);
-      }
-    }
-
-    if (sentCount > 0) {
       get().setAlertData({
-        message: `Sent ${sentCount} reminder email${sentCount === 1 ? '' : 's'} to ${user.full_name}.`,
+        message: `Sent one deadline digest with ${remindableTasks.length} task${remindableTasks.length === 1 ? '' : 's'} to ${user.full_name}.`,
         type: 'success'
       });
-      return;
+    } catch (err: any) {
+      const message = await getReminderEmailErrorMessage(err);
+      get().setAlertData({ message: `Deadline digest was not sent. ${message}`, type: 'error' });
     }
-
-    get().setAlertData({
-      message: `No reminder emails were sent. ${lastError}`,
-      type: 'error'
-    });
   },
 
   addCategory: async (name, color) => {

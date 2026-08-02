@@ -9,7 +9,12 @@ const corsHeaders = {
 };
 
 const DEFAULT_APP_URL = 'https://tasky-tko5.vercel.app/';
-const TEMPORARY_PASSWORD = 'ElMeraki@2026';
+const createTemporaryPassword = () => {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  const randomPart = Array.from(bytes, byte => alphabet[byte % alphabet.length]).join('');
+  return `ElM!${randomPart}9a`;
+};
 
 type AdminUserRequest =
   | { action: 'invite'; email: string }
@@ -63,7 +68,8 @@ const getSmtpConfig = () => {
 const sendPasswordEmail = async (
   email: string,
   appUrl: string,
-  kind: 'invitation' | 'reset'
+  kind: 'invitation' | 'reset',
+  temporaryPassword: string
 ) => {
   const smtp = getSmtpConfig();
   const transporter = nodemailer.createTransport({
@@ -87,7 +93,7 @@ const sendPasswordEmail = async (
       '',
       `Sign in: ${appUrl}`,
       `Email: ${email}`,
-      `Temporary password: ${TEMPORARY_PASSWORD}`,
+      `Temporary password: ${temporaryPassword}`,
       '',
       'You will be required to choose a private password after signing in.'
     ].join('\n'),
@@ -97,7 +103,7 @@ const sendPasswordEmail = async (
         <p>${intro}</p>
         <div style="background:#f1f5f9;border-radius:12px;padding:18px;margin:20px 0">
           <div><strong>Email:</strong> ${safeEmail}</div>
-          <div><strong>Temporary password:</strong> ${TEMPORARY_PASSWORD}</div>
+          <div><strong>Temporary password:</strong> ${escapeHtml(temporaryPassword)}</div>
         </div>
         <p><a href="${safeUrl}" style="display:inline-block;background:#2563eb;color:white;text-decoration:none;padding:11px 18px;border-radius:8px">Sign in to El Meraki</a></p>
         <p style="color:#64748b;font-size:13px">You will be required to choose a private password after signing in.</p>
@@ -152,9 +158,10 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'A valid email address is required.' }, 400);
     }
 
+    const temporaryPassword = createTemporaryPassword();
     const { data, error } = await supabase.auth.admin.createUser({
       email,
-      password: TEMPORARY_PASSWORD,
+      password: temporaryPassword,
       email_confirm: true,
       user_metadata: {
         full_name: email.split('@')[0],
@@ -170,7 +177,7 @@ Deno.serve(async (req) => {
     }
 
     try {
-      await sendPasswordEmail(email, appUrl, 'invitation');
+      await sendPasswordEmail(email, appUrl, 'invitation', temporaryPassword);
     } catch (error) {
       await supabase.auth.admin.deleteUser(data.user.id);
       return jsonResponse({
@@ -181,7 +188,7 @@ Deno.serve(async (req) => {
     return jsonResponse({
       success: true,
       user_id: data.user.id,
-      temporary_password: TEMPORARY_PASSWORD
+      temporary_password: temporaryPassword
     });
   }
 
@@ -196,8 +203,9 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'User account was not found.' }, 404);
     }
 
+    const temporaryPassword = createTemporaryPassword();
     const { error: updateError } = await supabase.auth.admin.updateUserById(payload.user_id, {
-      password: TEMPORARY_PASSWORD,
+      password: temporaryPassword,
       user_metadata: {
         ...targetData.user.user_metadata,
         must_change_password: true
@@ -207,7 +215,7 @@ Deno.serve(async (req) => {
 
     let emailSent = true;
     try {
-      await sendPasswordEmail(targetData.user.email, appUrl, 'reset');
+      await sendPasswordEmail(targetData.user.email, appUrl, 'reset', temporaryPassword);
     } catch (error) {
       emailSent = false;
       console.error('Password reset email failed:', error);
@@ -216,7 +224,7 @@ Deno.serve(async (req) => {
     return jsonResponse({
       success: true,
       email_sent: emailSent,
-      temporary_password: TEMPORARY_PASSWORD
+      temporary_password: temporaryPassword
     });
   }
 
