@@ -2883,6 +2883,7 @@ textarea:focus-visible {
 
 .team-directory-panel {
   grid-column: 1 / -1;
+  order: -1;
 }
 
 .team-directory-body {
@@ -3515,5 +3516,148 @@ html {
 
   .scrum-table {
     min-width: 640px;
+  }
+}
+
+/* Desktop sidebar sizing and compact mode */
+.sidebar-collapse-btn,
+.sidebar-resize-handle {
+  display: none;
+}
+
+.sidebar-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+@media (min-width: 1025px) {
+  .sidebar {
+    width: var(--sidebar-width, 272px) !important;
+    min-width: 0;
+    transition: width 220ms cubic-bezier(0.4, 0, 0.2, 1), padding 220ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .sidebar.is-resizing {
+    transition: none;
+    user-select: none;
+  }
+
+  .sidebar-collapse-btn {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text-3);
+    cursor: pointer;
+    transition: var(--transition);
+  }
+
+  .sidebar-collapse-btn:hover {
+    border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+    background: var(--primary-light);
+    color: var(--primary);
+  }
+
+  .sidebar-collapse-btn:active {
+    transform: scale(0.96);
+  }
+
+  .sidebar-collapse-btn:focus-visible,
+  .sidebar-resize-handle:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+  }
+
+  .sidebar-resize-handle {
+    position: absolute;
+    inset: 0 0 0 auto;
+    z-index: 5;
+    width: 7px;
+    display: block;
+    cursor: ew-resize;
+    touch-action: none;
+  }
+
+  .sidebar-resize-handle::after {
+    content: '';
+    position: absolute;
+    top: 15%;
+    right: 1px;
+    bottom: 15%;
+    width: 2px;
+    border-radius: var(--radius-full);
+    background: var(--primary);
+    opacity: 0;
+    transition: opacity 160ms ease;
+  }
+
+  .sidebar-resize-handle:hover::after,
+  .sidebar-resize-handle:focus-visible::after,
+  .sidebar.is-resizing .sidebar-resize-handle::after {
+    opacity: 0.75;
+  }
+
+  .sidebar.collapsed {
+    width: 76px !important;
+    padding-inline: 0.75rem !important;
+  }
+
+  .sidebar.collapsed .sidebar-top-row {
+    flex-direction: column;
+    justify-content: center !important;
+    gap: 0.65rem;
+  }
+
+  .sidebar.collapsed .sidebar-brand {
+    justify-content: center;
+  }
+
+  .sidebar.collapsed .sidebar-brand-copy,
+  .sidebar.collapsed .sidebar-task-copy,
+  .sidebar.collapsed .nav-label,
+  .sidebar.collapsed .nav-item span,
+  .sidebar.collapsed .nav-pill,
+  .sidebar.collapsed .theme-toggle-copy span,
+  .sidebar.collapsed .theme-toggle-switch,
+  .sidebar.collapsed .sidebar-user-copy {
+    display: none !important;
+  }
+
+  .sidebar.collapsed .sidebar-task-summary,
+  .sidebar.collapsed .nav-item,
+  .sidebar.collapsed .theme-toggle-btn,
+  .sidebar.collapsed .sidebar-user-section {
+    justify-content: center !important;
+  }
+
+  .sidebar.collapsed .sidebar-task-summary,
+  .sidebar.collapsed .nav-item,
+  .sidebar.collapsed .theme-toggle-btn {
+    padding-inline: 0.5rem !important;
+  }
+
+  .sidebar.collapsed .nav-item {
+    gap: 0;
+  }
+
+  .sidebar.collapsed .sidebar-resize-handle {
+    display: none;
+  }
+}
+
+@media (max-width: 1024px) {
+  .sidebar {
+    width: min(86vw, 320px) !important;
+  }
+
+  .sidebar-collapse-btn,
+  .sidebar-resize-handle {
+    display: none !important;
   }
 }
