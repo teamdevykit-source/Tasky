@@ -184,7 +184,7 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '1.5rem' }}>
+      <div className="dashboard-analytics-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '1.5rem' }}>
         
         {/* Status Breakdown */}
         <div className="dashboard-panel" style={{ 
@@ -276,7 +276,7 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
 
         {/* Admin-only Team Analytics */}
         {currentUser.role === 'Admin' && (
-          <div className="dashboard-panel" style={{ 
+          <div className="dashboard-panel team-directory-panel" style={{
             background: 'var(--surface)', borderRadius: 'var(--radius-xl)', 
             padding: '1.5rem', border: '1px solid var(--border)',
             boxShadow: 'var(--shadow-sm)'
@@ -296,9 +296,9 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
               )}
             </div>
             
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <div className="team-directory-body">
               {/* Employee Score Cards */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.5rem', marginBottom: '0.75rem' }}>
+              <div className="team-directory-score-grid">
                 {teamDirectoryProfiles.map(p => {
                   // compute assigned tasks and completion percent
                   const assigned = visibleTasks.filter((t: any) => getTaskAssigneeIds(t).includes(p.id));
