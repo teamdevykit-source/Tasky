@@ -1339,8 +1339,106 @@ select option {
   animation: spin 0.7s linear infinite;
 }
 
+.loading-state {
+  min-height: 40vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 2rem;
+  color: var(--text-1);
+  text-align: center;
+}
+
+.loading-state-fullscreen {
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--bg);
+}
+
+.loading-brand {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 0.5rem;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+  box-shadow: 0 8px 25px rgba(59, 130, 246, 0.25);
+  color: #ffffff;
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+.loading-state .spinner {
+  width: 32px;
+  height: 32px;
+}
+
+.loading-state p,
+.modal-loading-state p {
+  max-width: 34rem;
+  color: var(--text-3);
+  font-size: 0.86rem;
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+.loading-state h1,
+.screen-load-error h2 {
+  color: var(--text-1);
+  font-size: clamp(1.25rem, 3vw, 1.75rem);
+  line-height: 1.25;
+}
+
+.screen-load-error {
+  min-height: 45vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 2rem;
+  color: var(--text-1);
+  text-align: center;
+}
+
+.screen-load-error p {
+  max-width: 34rem;
+  color: var(--text-3);
+}
+
+.screen-load-error-overlay,
+.modal-loading-state {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.modal-loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.9rem;
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+    border-color: var(--border-strong);
+    border-top-color: var(--primary);
+  }
 }
 
 @keyframes urgent-pulse {

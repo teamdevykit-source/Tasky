@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../../../lib/supabase';
+import { withTimeout } from '../../../lib/async';
 import { useStore } from '../../../store/useStore';
 import { Mail, ArrowRight, ShieldCheck, Zap, Globe, Sun, Moon, Eye, EyeOff } from 'lucide-react';
 
@@ -23,9 +24,12 @@ export const Auth = () => {
     setError(null);
 
     try {
-      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      const { error: signInError } = await withTimeout(
+        supabase.auth.signInWithPassword({ email, password }),
+        15000,
+        'Sign in'
+      );
       if (signInError) throw signInError;
-      window.location.assign('/');
     } catch (error: unknown) {
       console.error('Auth error:', error);
       let msg = error instanceof Error

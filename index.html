@@ -6,12 +6,71 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="El Meraki Ops — Enterprise task management with real-time collaboration, kanban boards, and scrum tables." />
     <title>El Meraki Ops — Task Manager</title>
+    <script>
+      try {
+        const savedTheme = localStorage.getItem('elmeraki-theme');
+        document.documentElement.dataset.theme = savedTheme === 'light' ? 'light' : 'dark';
+      } catch {
+        document.documentElement.dataset.theme = 'dark';
+      }
+    </script>
+    <style>
+      #tasky-boot {
+        min-height: 100vh;
+        min-height: 100dvh;
+        display: grid;
+        place-items: center;
+        background: #090d18;
+        color: #e8edf7;
+        font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      [data-theme="light"] #tasky-boot { background: #f5f7fb; color: #172033; }
+      #tasky-boot > div { display: grid; justify-items: center; gap: 16px; }
+      #tasky-boot-mark {
+        width: 44px;
+        height: 44px;
+        display: grid;
+        place-items: center;
+        border-radius: 12px;
+        background: #3b82f6;
+        color: #ffffff;
+        font-weight: 800;
+        box-shadow: 0 8px 25px rgba(59, 130, 246, 0.25);
+      }
+      #tasky-boot-spinner {
+        width: 28px;
+        height: 28px;
+        border: 3px solid rgba(148, 163, 184, 0.28);
+        border-top-color: #3b82f6;
+        border-radius: 50%;
+        animation: tasky-boot-spin 0.7s linear infinite;
+      }
+      #tasky-boot p { margin: 0; color: #8893a8; font-size: 14px; font-weight: 600; }
+      @keyframes tasky-boot-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) {
+        #tasky-boot-spinner { animation: none; }
+      }
+    </style>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link
+      rel="preload"
+      as="style"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+      onload="this.onload=null;this.rel='stylesheet'"
+    >
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet"></noscript>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="tasky-boot" role="status" aria-live="polite" aria-busy="true">
+        <div>
+          <div id="tasky-boot-mark" aria-hidden="true">M</div>
+          <div id="tasky-boot-spinner" aria-hidden="true"></div>
+          <p>Starting Tasky…</p>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

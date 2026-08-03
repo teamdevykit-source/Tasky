@@ -1,3 +1,4 @@
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import { create } from 'zustand';
 import { canViewTaskByDepartment, getTaskAssigneeIds, isTaskAssignee, isTaskComplete, supabase } from '../lib/supabase';
 import type {
@@ -12,6 +13,7 @@ import type {
   UserRole,
   WorkspaceDepartment
 } from '../lib/supabase';
+import { withTimeout } from '../lib/async';
 
 type Theme = 'light' | 'dark';
 type AdminSettingsTab = 'users' | 'departments' | 'categories' | 'statuses';
@@ -95,16 +97,25 @@ const mapProfile = (profile: ProfileRow): Profile => {
   };
 };
 
+const SESSION_TIMEOUT_MS = 10000;
+const DATA_REQUEST_TIMEOUT_MS = 15000;
+const WORKSPACE_LOAD_TIMEOUT_MS = 30000;
+
 const fetchPagedRows = async <T>(table: string, select = '*'): Promise<T[]> => {
   const pageSize = 500;
   const rows: T[] = [];
 
   for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
+    const query = supabase
       .from(table)
       .select(select)
       .order('id', { ascending: true })
       .range(from, from + pageSize - 1);
+    const { data, error } = await withTimeout(
+      query,
+      DATA_REQUEST_TIMEOUT_MS,
+      `Loading ${table}`
+    );
     if (error) throw error;
     const page = (data || []) as T[];
     rows.push(...page);
@@ -131,6 +142,7 @@ const getUserSafeAlertMessage = (message: string) => {
 interface StoreState {
   currentUser: Profile | null;
   isCheckingSession: boolean;
+  initializationError: string | null;
   isInvitedSession: boolean;
   isLoaded: boolean;
   profiles: Profile[];
@@ -158,6 +170,7 @@ interface StoreState {
   toggleTheme: () => void;
   getVisibleTasks: () => Task[];
   initialize: () => Promise<void>;
+  retryInitialization: () => Promise<void>;
   dispose: () => void;
   refreshData: () => Promise<void>;
   addTask: (
@@ -245,8 +258,11 @@ const getInitialViewMode = (): StoreState['viewMode'] => {
 // Guard against multiple initializations
 let _initialized = false;
 let _loadSequence = 0;
+let _loadingSequence = 0;
 let _lifecycleGeneration = 0;
 let _disposeSync: (() => void) | null = null;
+let _workspaceLoadPromise: Promise<void> | null = null;
+let _workspaceLoadUserId: string | null = null;
 
 const hasPublicTaskOwner = (task: Partial<Task>) => (
   Boolean(task.is_self_task) ||
@@ -284,6 +300,7 @@ const persistReminderDismissals = () => {
 export const useStore = create<StoreState>((set, get) => ({
   currentUser: null,
   isCheckingSession: true,
+  initializationError: null,
   isInvitedSession: false,
   isLoaded: false,
   profiles: [],
@@ -437,137 +454,209 @@ export const useStore = create<StoreState>((set, get) => ({
   refreshData: async () => {},
 
   initialize: async () => {
-    // Prevent double-initialization (React StrictMode)
     if (_initialized) return;
     _initialized = true;
     const lifecycleGeneration = ++_lifecycleGeneration;
+    const sessionLoaderId = ++_loadingSequence;
+    set({ isCheckingSession: true, initializationError: null });
 
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-    if (sessionError) {
+    let session: Session | null;
+    try {
+      const sessionResult = await withTimeout(
+        supabase.auth.getSession(),
+        SESSION_TIMEOUT_MS,
+        'Session check'
+      );
+      if (sessionResult.error) throw sessionResult.error;
+      session = sessionResult.data.session;
+    } catch (error: unknown) {
+      if (lifecycleGeneration !== _lifecycleGeneration) return;
       _initialized = false;
-      set({ isCheckingSession: false });
-      get().setAlertData({ message: 'Unable to initialize your session.', type: 'error' });
+      const message = asErrorLike(error).message || 'Unable to initialize your session.';
+      set({
+        isCheckingSession: false,
+        initializationError: getUserSafeAlertMessage(message)
+      });
       return;
     }
 
-    // Handle invitation deep-link: We want them to stay logged in but we'll show a "finish" UI
-    const params = new URLSearchParams(window.location.search);
-    const isInvited = Boolean(
-      session && (
-        params.get('type') === 'signup' ||
-        session.user.user_metadata?.must_change_password === true
-      )
-    );
-    if (isInvited) set({ isInvitedSession: true });
+    if (lifecycleGeneration !== _lifecycleGeneration) return;
 
-    if (!session) {
-      set({ isCheckingSession: false });
-    }
+    const isInvitationSession = (candidate: Session | null) => {
+      const currentParams = new URLSearchParams(window.location.search);
+      return Boolean(
+        candidate && (
+          currentParams.get('type') === 'signup' ||
+          candidate.user.user_metadata?.must_change_password === true
+        )
+      );
+    };
+    set({ isInvitedSession: isInvitationSession(session) });
+
+    const performWorkspaceLoad = async (userId: string) => {
+      const requestId = ++_loadSequence;
+      let profiles: ProfileRow[];
+
+      const [initialProfiles, tasks, categories, statuses, departments, ticketRequests] =
+        await withTimeout(
+          Promise.all([
+            fetchPagedRows<ProfileRow>('profiles', '*, user_roles(role)'),
+            fetchPagedRows<Task>('tasks'),
+            fetchPagedRows<Category>('categories'),
+            fetchPagedRows<Status>('statuses'),
+            fetchPagedRows<WorkspaceDepartment>('departments'),
+            fetchPagedRows<TicketRequest>('ticket_requests')
+          ]),
+          WORKSPACE_LOAD_TIMEOUT_MS,
+          'Workspace loading'
+        );
+
+      profiles = initialProfiles;
+      let profile = profiles.find(candidate => candidate.id === userId) || null;
+
+      if (!profile) {
+        const currentSessionResult = await withTimeout(
+          supabase.auth.getSession(),
+          SESSION_TIMEOUT_MS,
+          'Session verification'
+        );
+        if (currentSessionResult.error) throw currentSessionResult.error;
+        const currentSession = currentSessionResult.data.session;
+        if (!currentSession || currentSession.user.id !== userId) {
+          throw new Error('Your session changed while the workspace was loading.');
+        }
+
+        const userEmail = currentSession.user.email || '';
+        const userFullName = currentSession.user.user_metadata?.full_name || userEmail.split('@')[0];
+        const profileResult = await withTimeout(
+          supabase.from('profiles').upsert({
+            id: userId,
+            email: userEmail,
+            full_name: userFullName
+          }),
+          DATA_REQUEST_TIMEOUT_MS,
+          'Creating your profile'
+        );
+        if (profileResult.error) throw profileResult.error;
+
+        const roleResult = await withTimeout(
+          supabase.from('user_roles').upsert({ user_id: userId, role: 'Worker' }),
+          DATA_REQUEST_TIMEOUT_MS,
+          'Creating your workspace role'
+        );
+        if (roleResult.error) throw roleResult.error;
+
+        profiles = await fetchPagedRows<ProfileRow>('profiles', '*, user_roles(role)');
+        profile = profiles.find(candidate => candidate.id === userId) || null;
+      }
+
+      if (!profile) {
+        throw new Error('Your authenticated account does not have an accessible workspace profile.');
+      }
+
+      if (
+        requestId !== _loadSequence ||
+        lifecycleGeneration !== _lifecycleGeneration
+      ) return;
+
+      set({
+        currentUser: mapProfile(profile),
+        ...splitTasksByArchiveState(tasks),
+        profiles: profiles.map(mapProfile),
+        categories: [...categories].sort((a, b) => a.sort_order - b.sort_order),
+        statuses: [...statuses].sort((a, b) => a.sort_order - b.sort_order),
+        departments: [...departments].sort((a, b) => a.sort_order - b.sort_order),
+        ticketRequests: [...ticketRequests].sort((a, b) => b.created_at.localeCompare(a.created_at)),
+        isLoaded: true,
+        initializationError: null
+      });
+      get().checkTaskDeadlines();
+    };
 
     const loadData = async (userId: string, isSilent = false) => {
-      const requestId = ++_loadSequence;
-      // 1. Avoid redundant loads if already loaded, UNLESS it's a silent refresh request
-      if (get().isLoaded && !isSilent) return;
-      
-      // 2. Only show the full-screen loader if it's the very first load
-      if (!isSilent) set({ isCheckingSession: true });
-      try {
-        console.log("🚀 Starting workspace load for:", userId);
-        
-        const [initialProfiles, tasks, categories, statuses, departments, ticketRequests] = await Promise.all([
-          fetchPagedRows<ProfileRow>('profiles', '*, user_roles(role)'),
-          fetchPagedRows<Task>('tasks'),
-          fetchPagedRows<Category>('categories'),
-          fetchPagedRows<Status>('statuses'),
-          fetchPagedRows<WorkspaceDepartment>('departments'),
-          fetchPagedRows<TicketRequest>('ticket_requests')
-        ]);
-        let profiles = initialProfiles;
-        let profile = profiles.find(candidate => candidate.id === userId) || null;
+      if (!isSilent && get().isLoaded && get().currentUser?.id === userId) return;
 
-        // 2. Handle missing profile (Lazy creation)
-        if (!profile) {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session) {
-            const userEmail = session.user.email || '';
-            const userFullName = session.user.user_metadata?.full_name || userEmail.split('@')[0];
-            
-            const { error: profileError } = await supabase
-              .from('profiles')
-              .upsert({ id: userId, email: userEmail, full_name: userFullName });
-            if (profileError) throw profileError;
-            const { error: roleError } = await supabase
-              .from('user_roles')
-              .upsert({ user_id: userId, role: 'Worker' });
-            if (roleError) throw roleError;
+      const loaderId = isSilent ? null : ++_loadingSequence;
+      if (loaderId !== null) {
+        set({ isCheckingSession: true, initializationError: null });
+      }
 
-            profiles = await fetchPagedRows<ProfileRow>('profiles', '*, user_roles(role)');
-            profile = profiles.find(candidate => candidate.id === userId) || null;
+      let loadPromise = _workspaceLoadUserId === userId ? _workspaceLoadPromise : null;
+      if (!loadPromise) {
+        const trackedPromise = performWorkspaceLoad(userId).finally(() => {
+          if (_workspaceLoadPromise === trackedPromise) {
+            _workspaceLoadPromise = null;
+            _workspaceLoadUserId = null;
           }
-        }
-
-        if (requestId !== _loadSequence) return;
-
-        // 3. Selective State Updates
-        if (profile) set({ currentUser: mapProfile(profile) });
-        if (tasks) {
-          set(splitTasksByArchiveState(tasks));
-        }
-        set({
-          profiles: profiles.map(mapProfile),
-          categories: categories.sort((a, b) => a.sort_order - b.sort_order),
-          statuses: statuses.sort((a, b) => a.sort_order - b.sort_order),
-          departments: departments.sort((a, b) => a.sort_order - b.sort_order),
-          ticketRequests: ticketRequests.sort((a, b) => b.created_at.localeCompare(a.created_at))
         });
+        _workspaceLoadPromise = trackedPromise;
+        _workspaceLoadUserId = userId;
+        loadPromise = trackedPromise;
+      }
 
-        set({ isLoaded: true });
-        get().checkTaskDeadlines();
+      try {
+        await loadPromise;
       } catch (error: unknown) {
-        console.error("❌ Loading Error:", error);
-        // Only alert on failure if it's NOT a silent background update
-        if (!isSilent && requestId === _loadSequence) {
-          get().setAlertData({ 
-            message: "Could not connect to database. Please check your internet or retry.", 
-            type: 'error' 
+        console.error('Workspace loading error:', error);
+        if (!isSilent && lifecycleGeneration === _lifecycleGeneration) {
+          const message = asErrorLike(error).message ||
+            'Could not load your workspace. Please check your connection and try again.';
+          set({
+            initializationError: getUserSafeAlertMessage(message),
+            isLoaded: false
           });
         }
       } finally {
-        if (!isSilent && requestId === _loadSequence) {
+        if (
+          loaderId !== null &&
+          loaderId === _loadingSequence &&
+          lifecycleGeneration === _lifecycleGeneration
+        ) {
           set({ isCheckingSession: false });
-          // Emergency release if somehow catch failed
-          setTimeout(() => set({ isCheckingSession: false }), 100);
         }
       }
     };
 
     set({
       refreshData: async () => {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        if (error) {
-          console.warn('Unable to refresh the workspace session:', error.message);
-          return;
-        }
-        if (session) {
-          await loadData(session.user.id, true); // true = silent refresh
+        try {
+          const result = await withTimeout(
+            supabase.auth.getSession(),
+            SESSION_TIMEOUT_MS,
+            'Session refresh'
+          );
+          if (result.error) throw result.error;
+          if (result.data.session) {
+            await loadData(result.data.session.user.id, true);
+          }
+        } catch (error: unknown) {
+          console.warn('Unable to refresh the workspace:', asErrorLike(error).message);
         }
       }
     });
 
     if (session) {
       await loadData(session.user.id);
+    } else if (sessionLoaderId === _loadingSequence) {
+      set({ isCheckingSession: false, initializationError: null });
     }
 
     if (lifecycleGeneration !== _lifecycleGeneration) return;
 
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session) {
-        set({ isLoaded: false });
-        await loadData(session.user.id);
-      } else {
+    const handleAuthChange = async (event: AuthChangeEvent, nextSession: Session | null) => {
+      if (lifecycleGeneration !== _lifecycleGeneration) return;
+
+      if (!nextSession) {
+        if (event !== 'SIGNED_OUT' && event !== 'INITIAL_SESSION') return;
         ++_loadSequence;
+        ++_loadingSequence;
+        _workspaceLoadPromise = null;
+        _workspaceLoadUserId = null;
         set({
           currentUser: null,
+          isCheckingSession: false,
+          initializationError: null,
+          isInvitedSession: false,
           isLoaded: false,
           tasks: [],
           archivedTasks: [],
@@ -579,7 +668,39 @@ export const useStore = create<StoreState>((set, get) => ({
           ticketRequests: [],
           reminders: []
         });
+        return;
       }
+
+      set({ isInvitedSession: isInvitationSession(nextSession) });
+
+      if (event === 'TOKEN_REFRESHED') return;
+
+      const isCurrentWorkspace = get().isLoaded && get().currentUser?.id === nextSession.user.id;
+      if (event === 'INITIAL_SESSION' && isCurrentWorkspace) return;
+      if (event === 'SIGNED_IN' && isCurrentWorkspace) return;
+
+      if (event === 'USER_UPDATED' && isCurrentWorkspace) {
+        await loadData(nextSession.user.id, true);
+        return;
+      }
+
+      if (!isCurrentWorkspace) {
+        ++_loadSequence;
+        set({
+          currentUser: null,
+          isLoaded: false,
+          tasks: [],
+          archivedTasks: [],
+          reminders: []
+        });
+      }
+      await loadData(nextSession.user.id);
+    };
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      queueMicrotask(() => {
+        void handleAuthChange(event, nextSession);
+      });
     });
 
     const refreshInterval = window.setInterval(() => {
@@ -711,12 +832,25 @@ export const useStore = create<StoreState>((set, get) => ({
     };
   },
 
+  retryInitialization: async () => {
+    get().dispose();
+    set({
+      isCheckingSession: true,
+      initializationError: null,
+      isLoaded: false
+    });
+    await get().initialize();
+  },
+
   dispose: () => {
     _disposeSync?.();
     _disposeSync = null;
     _initialized = false;
     ++_loadSequence;
+    ++_loadingSequence;
     ++_lifecycleGeneration;
+    _workspaceLoadPromise = null;
+    _workspaceLoadUserId = null;
   },
 
   addTask: async (taskData) => {
@@ -1379,7 +1513,24 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   logout: async () => {
-    await supabase.auth.signOut();
+    ++_loadSequence;
+    ++_loadingSequence;
+    _workspaceLoadPromise = null;
+    _workspaceLoadUserId = null;
+    set({ isCheckingSession: false, initializationError: null });
+    try {
+      const { error } = await withTimeout(
+        supabase.auth.signOut(),
+        SESSION_TIMEOUT_MS,
+        'Sign out'
+      );
+      if (error) throw error;
+    } catch (error: unknown) {
+      get().setAlertData({
+        message: `Could not sign out: ${asErrorLike(error).message || 'Unknown error'}`,
+        type: 'error'
+      });
+    }
   },
 
   getVisibleTasks: () => {
