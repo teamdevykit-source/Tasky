@@ -7,6 +7,7 @@ import { ConfirmationModal } from '../../../components/Shared/ConfirmationModal'
 
 export const ArchiveView: React.FC = () => {
   const archivedTasks = useStore(state => state.archivedTasks);
+  const currentUser = useStore(state => state.currentUser);
   const profiles = useStore(state => state.profiles);
   const restoreTask = useStore(state => state.restoreTask);
   const permanentlyDeleteTask = useStore(state => state.permanentlyDeleteTask);
@@ -22,6 +23,7 @@ export const ArchiveView: React.FC = () => {
   const filteredTasks = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     return [...archivedTasks]
+      .filter(task => currentUser?.role === 'Admin' || task.creator_id === currentUser?.id)
       .filter(task => (
         !query ||
         task.title.toLowerCase().includes(query) ||
@@ -31,9 +33,17 @@ export const ArchiveView: React.FC = () => {
       .sort((a, b) => (
         new Date(b.deleted_at || 0).getTime() - new Date(a.deleted_at || 0).getTime()
       ));
-  }, [archivedTasks, searchQuery]);
+  }, [archivedTasks, currentUser, searchQuery]);
 
-  const filteredTaskIds = filteredTasks.map(task => task.id);
+  const canPermanentlyDelete = (taskId: string) => {
+    const task = archivedTasks.find(candidate => candidate.id === taskId);
+    if (!task || !currentUser) return false;
+    return task.is_self_task
+      ? task.creator_id === currentUser.id
+      : currentUser.role === 'Admin';
+  };
+
+  const filteredTaskIds = filteredTasks.filter(task => canPermanentlyDelete(task.id)).map(task => task.id);
   const allFilteredSelected = filteredTaskIds.length > 0 &&
     filteredTaskIds.every(id => selectedTaskIds.includes(id));
 
@@ -125,7 +135,7 @@ export const ArchiveView: React.FC = () => {
           }}
         />
       </div>
-        {filteredTasks.length > 0 && (
+        {filteredTaskIds.length > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
             <label style={{
               display: 'inline-flex', alignItems: 'center', gap: '0.45rem',
@@ -136,7 +146,7 @@ export const ArchiveView: React.FC = () => {
                 checked={allFilteredSelected}
                 onChange={toggleSelectAll}
               />
-              Select all ({filteredTasks.length})
+              Select all ({filteredTaskIds.length})
             </label>
             <button
               type="button"
@@ -188,13 +198,15 @@ export const ArchiveView: React.FC = () => {
                   boxShadow: 'var(--shadow-sm)'
                 }}
               >
-                <input
-                  type="checkbox"
-                  checked={selectedTaskIds.includes(task.id)}
-                  onChange={() => toggleTaskSelection(task.id)}
-                  aria-label={`Select ${task.title}`}
-                  style={{ flexShrink: 0 }}
-                />
+                {canPermanentlyDelete(task.id) && (
+                  <input
+                    type="checkbox"
+                    checked={selectedTaskIds.includes(task.id)}
+                    onChange={() => toggleTaskSelection(task.id)}
+                    aria-label={`Select ${task.title}`}
+                    style={{ flexShrink: 0 }}
+                  />
+                )}
                 <div style={{ flex: '1 1 300px', minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
                     <h3 style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-1)' }}>
@@ -230,7 +242,7 @@ export const ArchiveView: React.FC = () => {
                 </div>
 
                 <div style={{ display: 'flex', gap: '0.55rem', flexWrap: 'wrap' }}>
-                  <button
+                  {canPermanentlyDelete(task.id) && <button
                     type="button"
                     onClick={() => handleRestore(task.id)}
                     disabled={isRestoring || isDeleting}
@@ -246,7 +258,7 @@ export const ArchiveView: React.FC = () => {
                   >
                     <RotateCcw size={14} />
                     {isRestoring ? 'Restoring...' : 'Restore'}
-                  </button>
+                  </button>}
                   <button
                     type="button"
                     onClick={() => handlePermanentDelete(task.id, task.title)}

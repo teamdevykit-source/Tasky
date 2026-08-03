@@ -2,7 +2,13 @@ import React, { useState } from 'react';
 import { useStore } from '../../../store/useStore';
 import { Bell, AlertTriangle, Clock, Calendar, ChevronRight, CheckCircle2, ListTodo, XCircle, Search, Filter, X, Users, Mail, Zap } from 'lucide-react';
 import { formatDateTime } from '../../../lib/format';
-import { getTaskAssigneeIds, isTaskAssignee } from '../../../lib/supabase';
+import {
+  getCompletedStatus,
+  getTaskAssigneeIds,
+  isTaskAssignee,
+  isTaskComplete
+} from '../../../lib/supabase';
+import type { Profile, Task } from '../../../lib/supabase';
 
 export const RemindersView: React.FC<{ 
   onSelectTask: (id: string) => void,
@@ -30,7 +36,7 @@ export const RemindersView: React.FC<{
   const visibleTasks = getVisibleTasks();
   
   // 2. Filtration Logic
-  const filterTask = (task: any) => {
+  const filterTask = (task: Task) => {
     const matchesSearch = task.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
                           (task.description || '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = activeCategory ? task.category === activeCategory : true;
@@ -39,7 +45,11 @@ export const RemindersView: React.FC<{
   };
 
   // 3. Process Lists
-  const undoneTasks = visibleTasks.filter(t => t.status !== 'Done' && filterTask(t));
+  const undoneTasks = visibleTasks.filter(task => (
+    !isTaskComplete(task, statuses)
+    && !(task.is_recurring && !task.parent_task_id)
+    && filterTask(task)
+  ));
 
   const overdueReminders = reminders.filter(r => {
     const t = tasks.find(task => task.id === r.taskId);
@@ -58,7 +68,7 @@ export const RemindersView: React.FC<{
     return { task, assignees };
   };
 
-  const handleEmailReminder = async (task: any, assignees: any[]) => {
+  const handleEmailReminder = async (task: Task, assignees: Profile[]) => {
     if (!assignees.some(assignee => assignee.email)) {
       setAlertData({
         message: "This task's assignees don't have email addresses associated with their profiles.",
@@ -71,12 +81,17 @@ export const RemindersView: React.FC<{
   };
 
   const handleMarkDone = async (taskId: string, reminderId: string) => {
-    const doneStatus = statuses.find(s => s.name.toLowerCase() === 'done')?.name || 'Done';
-    await updateTaskStatus(taskId, doneStatus);
+    const completedStatus = getCompletedStatus(statuses);
+    if (!completedStatus) {
+      setAlertData({ message: 'An administrator must configure a completed status first.', type: 'error' });
+      return;
+    }
+    await updateTaskStatus(taskId, completedStatus.name);
     dismissReminder(reminderId);
   };
 
-  const ReminderCard = ({ r, color, label }: { r: any; color: string; label: string }) => {
+  type ReminderItem = (typeof reminders)[number];
+  const ReminderCard = ({ r, color, label }: { r: ReminderItem; color: string; label: string }) => {
     const taskInfo = getTaskInfo(r.taskId);
     if (!taskInfo) return null;
     const { task, assignees } = taskInfo;

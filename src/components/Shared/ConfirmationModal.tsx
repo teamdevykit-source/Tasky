@@ -4,7 +4,7 @@ import { AlertCircle, X } from 'lucide-react';
 interface ConfirmationModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: () => void | boolean | Promise<void | boolean>;
   title: string;
   message: string;
   confirmText?: string;
@@ -22,7 +22,19 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
   cancelText = 'Cancel',
   type = 'danger'
 }) => {
+  const [isConfirming, setIsConfirming] = React.useState(false);
   if (!isOpen) return null;
+
+  const handleConfirm = async () => {
+    if (isConfirming) return;
+    setIsConfirming(true);
+    try {
+      const result = await onConfirm();
+      if (result !== false) onClose();
+    } finally {
+      setIsConfirming(false);
+    }
+  };
 
   const color = type === 'danger' ? 'var(--danger)' : type === 'warning' ? '#f59e0b' : 'var(--primary)';
   const bgColor = type === 'danger' ? 'rgba(239, 68, 68, 0.1)' : type === 'warning' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(99, 102, 241, 0.1)';
@@ -45,6 +57,7 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
       >
         <button 
           onClick={onClose}
+          disabled={isConfirming}
           style={{
             position: 'absolute', top: '1.25rem', right: '1.25rem',
             padding: '0.4rem', borderRadius: 'var(--radius-md)',
@@ -72,6 +85,7 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
         <div style={{ display: 'flex', gap: '0.75rem', marginTop: '2rem', justifyContent: 'flex-end' }}>
           <button 
             onClick={onClose}
+            disabled={isConfirming}
             style={{
               padding: '0.6rem 1.25rem', borderRadius: 'var(--radius-md)',
               background: 'var(--surface-3)', border: '1px solid var(--border)',
@@ -81,10 +95,8 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
             {cancelText}
           </button>
           <button 
-            onClick={() => {
-              onConfirm();
-              onClose();
-            }}
+            onClick={() => void handleConfirm()}
+            disabled={isConfirming}
             style={{
               padding: '0.6rem 1.25rem', borderRadius: 'var(--radius-md)',
               background: color, border: 'none',
@@ -92,7 +104,7 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
               boxShadow: `0 4px 12px ${color}30`
             }}
           >
-            {confirmText}
+            {isConfirming ? 'Please wait...' : confirmText}
           </button>
         </div>
       </div>

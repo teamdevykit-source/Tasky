@@ -23,6 +23,7 @@ export const CreateTaskModal: React.FC<{ onClose: () => void, forceSelfTask?: bo
   const categories = useStore(s => s.categories);
   const statuses = useStore(s => s.statuses);
   const setAlertData = useStore(s => s.setAlertData);
+  const mustCreateSelfTask = Boolean(forceSelfTask || currentUser?.role !== 'Admin');
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -39,7 +40,7 @@ export const CreateTaskModal: React.FC<{ onClose: () => void, forceSelfTask?: bo
   const [showSuccess, setShowSuccess] = useState(false);
   const [isObserversOpen, setIsObserversOpen] = useState(false);
   const [isAssigneeOpen, setIsAssigneeOpen] = useState(false);
-  const [isSelfTask, setIsSelfTask] = useState(forceSelfTask || false);
+  const [isSelfTask, setIsSelfTask] = useState(mustCreateSelfTask);
 
   // ── Recurrence State ──
   const [isRecurring, setIsRecurring] = useState(false);
@@ -116,6 +117,9 @@ export const CreateTaskModal: React.FC<{ onClose: () => void, forceSelfTask?: bo
       recurrence_type: isRecurring ? recurrenceType : undefined,
       recurrence_time: isRecurring ? recurrenceTime : undefined,
       recurrence_day: isRecurring && recurrenceType !== 'daily' ? recurrenceDay : undefined,
+      recurrence_timezone: isRecurring
+        ? Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Cairo'
+        : undefined,
       next_recurrence_at: nextRecurrence
     });
 
@@ -270,7 +274,7 @@ export const CreateTaskModal: React.FC<{ onClose: () => void, forceSelfTask?: bo
             </div>
 
             {/* Self Task Toggle */}
-            {!forceSelfTask && (
+            {!mustCreateSelfTask && (
               <div style={{
                 padding: '1rem',
                 background: isSelfTask ? 'rgba(129, 140, 248, 0.08)' : 'var(--surface-3)',

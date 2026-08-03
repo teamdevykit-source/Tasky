@@ -23,12 +23,6 @@ export const CompleteProfileModal: React.FC = () => {
     }
   }, []);
 
-  React.useEffect(() => {
-    if (currentUser?.full_name && !fullName) {
-      setFullName(currentUser.full_name);
-    }
-  }, [currentUser?.full_name]);
-
   if (!currentUser) return null;
 
   const handleComplete = async (e: React.FormEvent) => {
@@ -40,8 +34,8 @@ export const CompleteProfileModal: React.FC = () => {
       return;
     }
 
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters");
+    if (password.length < 12) {
+      setError('Password must be at least 12 characters');
       return;
     }
 
@@ -55,8 +49,8 @@ export const CompleteProfileModal: React.FC = () => {
       // 3. Clear flag to close modal
       useStore.setState({ isInvitedSession: false });
       
-    } catch (err: any) {
-      setError(err.message);
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : 'Failed to complete profile');
     } finally {
       setLoading(false);
     }
@@ -134,7 +128,7 @@ export const CompleteProfileModal: React.FC = () => {
                   type="password" 
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  placeholder="At least 6 characters"
+                  placeholder="At least 12 characters"
                   style={{ paddingLeft: '2.75rem' }}
                   required
                 />

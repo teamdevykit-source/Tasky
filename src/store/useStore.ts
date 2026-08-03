@@ -1,7 +1,17 @@
 import { create } from 'zustand';
-import { canViewTaskByDepartment, getTaskAssigneeIds, isTaskAssignee, supabase } from '../lib/supabase';
-import type { Department, Profile, Task, Category, Status, ReportSchedule, TicketRequest, TicketStatus, WorkspaceDepartment } from '../lib/supabase';
-import { buildRecurringTaskOccurrence, computeNextRecurrenceAfter } from '../lib/recurrence';
+import { canViewTaskByDepartment, getTaskAssigneeIds, isTaskAssignee, isTaskComplete, supabase } from '../lib/supabase';
+import type {
+  Category,
+  Department,
+  Profile,
+  ReportSchedule,
+  Status,
+  Task,
+  TicketRequest,
+  TicketStatus,
+  UserRole,
+  WorkspaceDepartment
+} from '../lib/supabase';
 
 type Theme = 'light' | 'dark';
 type AdminSettingsTab = 'users' | 'departments' | 'categories' | 'statuses';
@@ -13,10 +23,31 @@ export interface DashboardTaskFilters {
   selfTasks?: 'all' | 'only' | 'hide';
 }
 
-const getReminderEmailErrorMessage = async (err: any) => {
-  const message = err?.message || 'Failed to send reminder email.';
-  const context = err?.context;
-  const status = context?.status || context?.response?.status;
+type ErrorLike = {
+  message?: string;
+  code?: string;
+  context?: Response | { status?: number; response?: { status?: number } };
+};
+
+type ProfileRow = Omit<Profile, 'role'> & {
+  user_roles?: { role?: UserRole } | { role?: UserRole }[] | null;
+};
+
+const asErrorLike = (error: unknown): ErrorLike => (
+  typeof error === 'object' && error !== null ? error as ErrorLike : {}
+);
+
+const getContextStatus = (context: ErrorLike['context']) => {
+  if (!context) return undefined;
+  if (context instanceof Response) return context.status;
+  return context.status || context.response?.status;
+};
+
+const getReminderEmailErrorMessage = async (error: unknown) => {
+  const err = asErrorLike(error);
+  const message = err.message || 'Failed to send reminder email.';
+  const context = err.context;
+  const status = getContextStatus(context);
 
   if (context instanceof Response) {
     const body = await context.clone().json().catch(() => null);
@@ -33,8 +64,9 @@ const getReminderEmailErrorMessage = async (err: any) => {
   return message;
 };
 
-const getEdgeFunctionErrorMessage = async (err: any, fallback: string) => {
-  const context = err?.context;
+const getEdgeFunctionErrorMessage = async (error: unknown, fallback: string) => {
+  const err = asErrorLike(error);
+  const context = err.context;
   if (context instanceof Response) {
     const body = await context.clone().json().catch(() => null);
     if (body?.error) return body.error;
@@ -42,11 +74,43 @@ const getEdgeFunctionErrorMessage = async (err: any, fallback: string) => {
   return err?.message || fallback;
 };
 
-const isMissingReportSchedulesTable = (error: any) => (
-  error?.code === 'PGRST205' ||
-  error?.message?.includes("Could not find the table 'public.report_schedules'") ||
-  error?.message?.includes("relation \"public.report_schedules\" does not exist")
-);
+const isMissingReportSchedulesTable = (error: unknown) => {
+  const err = asErrorLike(error);
+  return err.code === 'PGRST205' ||
+  err.message?.includes("Could not find the table 'public.report_schedules'") ||
+  err.message?.includes("relation \"public.report_schedules\" does not exist");
+};
+
+const mapProfile = (profile: ProfileRow): Profile => {
+  const roleRelation = Array.isArray(profile.user_roles)
+    ? profile.user_roles[0]
+    : profile.user_roles;
+  return {
+    id: profile.id,
+    email: profile.email,
+    full_name: profile.full_name,
+    job_title: profile.job_title,
+    department: profile.department,
+    role: roleRelation?.role || 'Worker'
+  };
+};
+
+const fetchPagedRows = async <T>(table: string, select = '*'): Promise<T[]> => {
+  const pageSize = 500;
+  const rows: T[] = [];
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from(table)
+      .select(select)
+      .order('id', { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    const page = (data || []) as T[];
+    rows.push(...page);
+    if (page.length < pageSize) return rows;
+  }
+};
 
 const getUserSafeAlertMessage = (message: string) => {
   const containsDatabaseDetails = [
@@ -93,9 +157,12 @@ interface StoreState {
   setTheme: (theme: Theme) => void;
   toggleTheme: () => void;
   getVisibleTasks: () => Task[];
-  initialize: () => void;
+  initialize: () => Promise<void>;
+  dispose: () => void;
   refreshData: () => Promise<void>;
-  addTask: (taskData: Omit<Task, 'id' | 'created_at'>) => Promise<{ success: boolean, data?: any, error?: any }>;
+  addTask: (
+    taskData: Omit<Task, 'id' | 'created_at'>
+  ) => Promise<{ success: boolean; data?: Task; error?: unknown }>;
   updateTask: (taskId: string, updates: Partial<Task>) => Promise<void>;
   updateTaskStatus: (taskId: string, status: string) => Promise<void>;
   updateUserRole: (userId: string, role: Profile['role']) => Promise<void>;
@@ -106,7 +173,13 @@ interface StoreState {
   sendTaskReminderEmail: (taskId: string) => Promise<boolean>;
   sendEmployeeDeadlineReminders: (userId: string) => Promise<void>;
   sendReportEmailNow: () => Promise<boolean>;
-  createReportSchedule: (schedule: { schedule_type: string; time_of_day: string; day_of_week?: number; day_of_month?: number }) => Promise<boolean>;
+  createReportSchedule: (schedule: {
+    schedule_type: string;
+    time_of_day: string;
+    day_of_week?: number;
+    day_of_month?: number;
+    timezone: string;
+  }) => Promise<boolean>;
   deleteReportSchedule: (id: string) => Promise<boolean>;
   fetchReportSchedules: () => Promise<void>;
   createTicketRequest: (ticket: Pick<TicketRequest, 'title' | 'description' | 'priority' | 'category' | 'start_date' | 'end_date'>) => Promise<boolean>;
@@ -121,6 +194,7 @@ interface StoreState {
   ) => Promise<void>;
   deleteDepartment: (id: string) => Promise<void>;
   addStatus: (name: string, color: string) => Promise<void>;
+  setCompletedStatus: (id: string) => Promise<void>;
   deleteStatus: (id: string) => Promise<void>;
   deleteUser: (userId: string) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
@@ -130,7 +204,6 @@ interface StoreState {
   permanentlyDeleteTasks: (ids: string[]) => Promise<boolean>;
   dismissReminder: (reminderId: string) => void;
   checkTaskDeadlines: () => void;
-  processDueRecurringTasks: () => Promise<void>;
   logout: () => Promise<void>;
   getDashboardTasks: () => Task[];
 }
@@ -139,13 +212,19 @@ const getInitialTheme = (): Theme => {
   try {
     const saved = localStorage.getItem('elmeraki-theme');
     if (saved === 'light' || saved === 'dark') return saved;
-  } catch { }
+  } catch {
+    // Storage may be unavailable in restricted browsing contexts.
+  }
   return 'dark';
 };
 
 const applyTheme = (theme: Theme) => {
   document.documentElement.setAttribute('data-theme', theme);
-  try { localStorage.setItem('elmeraki-theme', theme); } catch { }
+  try {
+    localStorage.setItem('elmeraki-theme', theme);
+  } catch {
+    // Theme still applies for the current session.
+  }
 };
 
 // Apply initial theme immediately
@@ -157,19 +236,50 @@ const getInitialViewMode = (): StoreState['viewMode'] => {
     if (saved && ['dashboard', 'kanban', 'scrum', 'tickets', 'settings', 'archive', 'my-tasks', 'profile', 'reminders', 'recurring'].includes(saved)) {
       return saved as StoreState['viewMode'];
     }
-  } catch { }
+  } catch {
+    // Fall back to the dashboard when preferences cannot be read.
+  }
   return 'dashboard';
 };
 
 // Guard against multiple initializations
 let _initialized = false;
-let _isProcessingRecurringTasks = false;
+let _loadSequence = 0;
+let _lifecycleGeneration = 0;
+let _disposeSync: (() => void) | null = null;
 
 const hasPublicTaskOwner = (task: Partial<Task>) => (
   Boolean(task.is_self_task) ||
   Boolean(task.assignee_id) ||
   Boolean(task.assignee_ids?.length)
 );
+
+const splitTasksByArchiveState = (tasks: Task[]) => ({
+  tasks: tasks.filter(task => !task.deleted_at),
+  archivedTasks: tasks.filter(task => Boolean(task.deleted_at))
+});
+
+const dismissedReminderIds = new Set<string>();
+try {
+  const savedDismissals = JSON.parse(localStorage.getItem('elmeraki-dismissed-reminders') || '[]');
+  if (Array.isArray(savedDismissals)) {
+    savedDismissals.filter((value): value is string => typeof value === 'string')
+      .forEach(value => dismissedReminderIds.add(value));
+  }
+} catch {
+  // A malformed preference must not prevent the app from loading.
+}
+
+const persistReminderDismissals = () => {
+  try {
+    localStorage.setItem(
+      'elmeraki-dismissed-reminders',
+      JSON.stringify([...dismissedReminderIds].slice(-500))
+    );
+  } catch {
+    // Storage can be unavailable in private browsing; in-memory dismissal still works.
+  }
+};
 
 export const useStore = create<StoreState>((set, get) => ({
   currentUser: null,
@@ -198,28 +308,23 @@ export const useStore = create<StoreState>((set, get) => ({
   setDashboardTaskFilters: (filters) => set({ dashboardTaskFilters: filters }),
   setAdminSettingsTab: (tab) => set({ adminSettingsTab: tab }),
   
-  dismissReminder: (id) => set(s => ({ 
-    reminders: s.reminders.filter(r => r.id !== id) 
-  })),
+  dismissReminder: (id) => {
+    dismissedReminderIds.add(id);
+    persistReminderDismissals();
+    set(state => ({ reminders: state.reminders.filter(reminder => reminder.id !== id) }));
+  },
 
   checkTaskDeadlines: () => {
-    const { tasks, currentUser, reminders } = get();
+    const { currentUser, statuses } = get();
     if (!currentUser) return;
 
     const newReminders: StoreState['reminders'] = [];
     const now = new Date();
     
-    // Admins get reminders for EVERYTHING (except private tasks).
-    // Workers only get reminders for tasks they are assigned to, created, or observe.
-    const tasksToCheck = tasks.filter(t => {
-      if (t.status === 'Done' || t.is_self_task) return false;
-      
-      if (currentUser.role === 'Admin') return true;
-      
-      return isTaskAssignee(t, currentUser.id) ||
-             (t.creator_id === currentUser.id) ||
-             (t.observers && t.observers.includes(currentUser.id));
-    });
+    const tasksToCheck = get().getVisibleTasks().filter(task => (
+      !isTaskComplete(task, statuses)
+      && !(task.is_recurring && !task.parent_task_id)
+    ));
 
     tasksToCheck.forEach(task => {
       if (!task.end_date) return;
@@ -230,8 +335,8 @@ export const useStore = create<StoreState>((set, get) => ({
 
       // 1. Overdue (Late)
       if (diffHrs <= 0) {
-        const rId = `${task.id}-overdue`;
-        if (!reminders.find(r => r.id === rId)) {
+        const rId = `${task.id}-${task.end_date}-overdue`;
+        if (!dismissedReminderIds.has(rId)) {
           newReminders.push({
             id: rId,
             taskId: task.id,
@@ -242,8 +347,8 @@ export const useStore = create<StoreState>((set, get) => ({
       }
       // 2. One Hour Reminder (Urgent)
       else if (diffHrs > 0 && diffHrs <= 1) {
-        const rId = `${task.id}-one-hour`;
-        if (!reminders.find(r => r.id === rId)) {
+        const rId = `${task.id}-${task.end_date}-one-hour`;
+        if (!dismissedReminderIds.has(rId)) {
           newReminders.push({
             id: rId,
             taskId: task.id,
@@ -254,8 +359,8 @@ export const useStore = create<StoreState>((set, get) => ({
       }
       // 3. One Day Reminder (Warning)
       else if (diffHrs > 1 && diffHrs <= 24) {
-        const rId = `${task.id}-one-day`;
-        if (!reminders.find(r => r.id === rId)) {
+        const rId = `${task.id}-${task.end_date}-one-day`;
+        if (!dismissedReminderIds.has(rId)) {
           newReminders.push({
             id: rId,
             taskId: task.id,
@@ -266,77 +371,7 @@ export const useStore = create<StoreState>((set, get) => ({
       }
     });
 
-    if (newReminders.length > 0) {
-      set(s => ({ reminders: [...s.reminders, ...newReminders] }));
-    }
-  },
-  processDueRecurringTasks: async () => {
-    if (_isProcessingRecurringTasks) return;
-    _isProcessingRecurringTasks = true;
-
-    try {
-      const { tasks, statuses } = get();
-      const now = new Date();
-      const defaultStatus = statuses[0]?.name || 'To Do';
-      const dueTemplates = tasks.filter(task => (
-        task.is_recurring &&
-        !task.parent_task_id &&
-        task.recurrence_type &&
-        task.next_recurrence_at &&
-        new Date(task.next_recurrence_at).getTime() <= now.getTime()
-      ));
-
-      for (const template of dueTemplates) {
-        if (!template.recurrence_type || !template.next_recurrence_at) continue;
-
-        const occurrenceAt = new Date(template.next_recurrence_at);
-        if (Number.isNaN(occurrenceAt.getTime())) continue;
-
-        const nextRecurrence = computeNextRecurrenceAfter(
-          template.recurrence_type,
-          template.recurrence_time,
-          template.recurrence_type === 'daily' ? null : template.recurrence_day,
-          now
-        ).toISOString();
-
-        const { data: claimedTemplate, error: claimError } = await supabase
-          .from('tasks')
-          .update({ next_recurrence_at: nextRecurrence })
-          .eq('id', template.id)
-          .eq('next_recurrence_at', template.next_recurrence_at)
-          .select()
-          .maybeSingle();
-
-        if (claimError || !claimedTemplate) continue;
-
-        const occurrence = buildRecurringTaskOccurrence(template, occurrenceAt, defaultStatus);
-        const { data: createdTask, error: insertError } = await supabase
-          .from('tasks')
-          .insert([occurrence])
-          .select()
-          .single();
-
-        if (insertError) {
-          await supabase
-            .from('tasks')
-            .update({ next_recurrence_at: template.next_recurrence_at })
-            .eq('id', template.id);
-          continue;
-        }
-
-        set((state) => ({
-          tasks: [
-            ...state.tasks
-              .map(task => task.id === template.id ? { ...task, next_recurrence_at: nextRecurrence } : task)
-              .filter(task => task.id !== createdTask.id),
-            createdTask
-          ]
-        }));
-
-      }
-    } finally {
-      _isProcessingRecurringTasks = false;
-    }
+    set({ reminders: newReminders });
   },
   viewMode: getInitialViewMode(),
   updatePassword: async (password) => {
@@ -353,27 +388,38 @@ export const useStore = create<StoreState>((set, get) => ({
   updateProfile: async (updates) => {
     const { currentUser } = get();
     if (!currentUser) return;
-    
-    // 1. Update Auth metadata
-    if (updates.full_name) {
-      await supabase.auth.updateUser({ data: { full_name: updates.full_name } });
-    }
-    
-    // 2. Update Public profiles table
+
     const { error } = await supabase.from('profiles').update(updates).eq('id', currentUser.id);
     if (error) {
       set({ alertData: { message: error.message, type: 'error' } });
       throw error;
     }
+
+    if (updates.full_name) {
+      const { error: authError } = await supabase.auth.updateUser({
+        data: { full_name: updates.full_name }
+      });
+      if (authError) {
+        await supabase
+          .from('profiles')
+          .update({ full_name: currentUser.full_name })
+          .eq('id', currentUser.id);
+        set({ alertData: { message: authError.message, type: 'error' } });
+        throw authError;
+      }
+    }
     
-    // 3. Update local state
     set({ 
       currentUser: { ...currentUser, ...updates },
       profiles: get().profiles.map(p => p.id === currentUser.id ? { ...p, ...updates } : p)
     });
   },
   setViewMode: (mode) => {
-    try { localStorage.setItem('elmeraki-view', mode); } catch { }
+    try {
+      localStorage.setItem('elmeraki-view', mode);
+    } catch {
+      // Navigation still works without persistence.
+    }
     set({ viewMode: mode });
   },
 
@@ -394,8 +440,15 @@ export const useStore = create<StoreState>((set, get) => ({
     // Prevent double-initialization (React StrictMode)
     if (_initialized) return;
     _initialized = true;
+    const lifecycleGeneration = ++_lifecycleGeneration;
 
-    const { data: { session } } = await supabase.auth.getSession();
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) {
+      _initialized = false;
+      set({ isCheckingSession: false });
+      get().setAlertData({ message: 'Unable to initialize your session.', type: 'error' });
+      return;
+    }
 
     // Handle invitation deep-link: We want them to stay logged in but we'll show a "finish" UI
     const params = new URLSearchParams(window.location.search);
@@ -409,10 +462,10 @@ export const useStore = create<StoreState>((set, get) => ({
 
     if (!session) {
       set({ isCheckingSession: false });
-      return;
     }
 
     const loadData = async (userId: string, isSilent = false) => {
+      const requestId = ++_loadSequence;
       // 1. Avoid redundant loads if already loaded, UNLESS it's a silent refresh request
       if (get().isLoaded && !isSilent) return;
       
@@ -421,29 +474,16 @@ export const useStore = create<StoreState>((set, get) => ({
       try {
         console.log("🚀 Starting workspace load for:", userId);
         
-        // 1. Fetch data with a 10-second timeout to prevent 'infinite loading'
-        const dataPromise = Promise.all([
-          supabase.from('profiles').select('*, user_roles(role)').eq('id', userId).maybeSingle(),
-          supabase.from('tasks').select('*'),
-          supabase.from('profiles').select('*, user_roles(role)'),
-          supabase.from('categories').select('*').order('sort_order'),
-          supabase.from('statuses').select('*').order('sort_order'),
-          supabase.from('departments').select('*').order('sort_order')
+        const [initialProfiles, tasks, categories, statuses, departments, ticketRequests] = await Promise.all([
+          fetchPagedRows<ProfileRow>('profiles', '*, user_roles(role)'),
+          fetchPagedRows<Task>('tasks'),
+          fetchPagedRows<Category>('categories'),
+          fetchPagedRows<Status>('statuses'),
+          fetchPagedRows<WorkspaceDepartment>('departments'),
+          fetchPagedRows<TicketRequest>('ticket_requests')
         ]);
-
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error("Timeout: Connection to workspace took too long (10s limit)")), 10000)
-        );
-
-        const results = await Promise.race([dataPromise, timeoutPromise]) as any[];
-        let [
-          { data: profile },
-          { data: tasks },
-          { data: profiles },
-          { data: categories },
-          { data: statuses },
-          { data: departments }
-        ] = results;
+        let profiles = initialProfiles;
+        let profile = profiles.find(candidate => candidate.id === userId) || null;
 
         // 2. Handle missing profile (Lazy creation)
         if (!profile) {
@@ -452,65 +492,48 @@ export const useStore = create<StoreState>((set, get) => ({
             const userEmail = session.user.email || '';
             const userFullName = session.user.user_metadata?.full_name || userEmail.split('@')[0];
             
-            await supabase.from('profiles').upsert({ id: userId, email: userEmail, full_name: userFullName });
-            await supabase.from('user_roles').upsert({ user_id: userId, role: 'Worker' });
-            
-            // Refetch
-            const { data: finalP } = await supabase
+            const { error: profileError } = await supabase
               .from('profiles')
-              .select('*, user_roles(role)')
-              .eq('id', userId)
-              .single();
-            profile = finalP;
-            const { data: allP } = await supabase.from('profiles').select('*, user_roles(role)');
-            profiles = allP;
+              .upsert({ id: userId, email: userEmail, full_name: userFullName });
+            if (profileError) throw profileError;
+            const { error: roleError } = await supabase
+              .from('user_roles')
+              .upsert({ user_id: userId, role: 'Worker' });
+            if (roleError) throw roleError;
+
+            profiles = await fetchPagedRows<ProfileRow>('profiles', '*, user_roles(role)');
+            profile = profiles.find(candidate => candidate.id === userId) || null;
           }
         }
 
-        const getRole = (p: any) => {
-          if (!p) return 'Worker';
-          const r = Array.isArray(p.user_roles) ? p.user_roles[0]?.role : p.user_roles?.role;
-          return r || 'Worker';
-        };
+        if (requestId !== _loadSequence) return;
 
         // 3. Selective State Updates
-        if (profile) set({ currentUser: { ...profile, role: getRole(profile) } as any });
+        if (profile) set({ currentUser: mapProfile(profile) });
         if (tasks) {
-          set({
-            tasks: tasks.filter((task: Task) => !task.deleted_at),
-            archivedTasks: tasks.filter((task: Task) => Boolean(task.deleted_at))
-          });
+          set(splitTasksByArchiveState(tasks));
         }
-        if (profiles) set({ profiles: profiles.map((p: any) => ({ ...p, role: getRole(p) })) });
-        if (categories) set({ categories });
-        if (statuses) set({ statuses });
-        if (departments) set({ departments });
-        if (profile && getRole(profile) === 'Admin') {
-          const { data: ticketRequests } = await supabase
-            .from('ticket_requests')
-            .select('*')
-            .order('created_at', { ascending: false });
-          if (ticketRequests) set({ ticketRequests });
-        } else {
-          set({ ticketRequests: [] });
-        }
+        set({
+          profiles: profiles.map(mapProfile),
+          categories: categories.sort((a, b) => a.sort_order - b.sort_order),
+          statuses: statuses.sort((a, b) => a.sort_order - b.sort_order),
+          departments: departments.sort((a, b) => a.sort_order - b.sort_order),
+          ticketRequests: ticketRequests.sort((a, b) => b.created_at.localeCompare(a.created_at))
+        });
 
         set({ isLoaded: true });
         get().checkTaskDeadlines();
-        if (isSilent) {
-          // If silent, just update parts of state if needed, but usually initialize has set them already
-        }
-      } catch (error) {
+      } catch (error: unknown) {
         console.error("❌ Loading Error:", error);
         // Only alert on failure if it's NOT a silent background update
-        if (!isSilent) {
+        if (!isSilent && requestId === _loadSequence) {
           get().setAlertData({ 
             message: "Could not connect to database. Please check your internet or retry.", 
             type: 'error' 
           });
         }
       } finally {
-        if (!isSilent) {
+        if (!isSilent && requestId === _loadSequence) {
           set({ isCheckingSession: false });
           // Emergency release if somehow catch failed
           setTimeout(() => set({ isCheckingSession: false }), 100);
@@ -520,7 +543,11 @@ export const useStore = create<StoreState>((set, get) => ({
 
     set({
       refreshData: async () => {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) {
+          console.warn('Unable to refresh the workspace session:', error.message);
+          return;
+        }
         if (session) {
           await loadData(session.user.id, true); // true = silent refresh
         }
@@ -531,51 +558,61 @@ export const useStore = create<StoreState>((set, get) => ({
       await loadData(session.user.id);
     }
 
-    supabase.auth.onAuthStateChange(async (_event, session) => {
+    if (lifecycleGeneration !== _lifecycleGeneration) return;
+
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (session) {
+        set({ isLoaded: false });
         await loadData(session.user.id);
       } else {
+        ++_loadSequence;
         set({
           currentUser: null,
+          isLoaded: false,
           tasks: [],
           archivedTasks: [],
           profiles: [],
           categories: [],
           statuses: [],
           departments: [],
-          ticketRequests: []
+          reportSchedules: [],
+          ticketRequests: [],
+          reminders: []
         });
       }
     });
 
-    // 4. Hybrid Sync Fallback: Auto-refresh data every 20 seconds
-    setInterval(() => {
-      get().refreshData?.();
-      get().checkTaskDeadlines?.();
-    }, 20000); 
+    const refreshInterval = window.setInterval(() => {
+      void get().refreshData();
+      get().checkTaskDeadlines();
+    }, 60000);
+
+    // Browser tabs can miss realtime events while suspended. Reconcile with the
+    // database as soon as the user returns or the connection comes back online.
+    const refreshWhenActive = () => {
+      if (document.visibilityState === 'visible') void get().refreshData();
+    };
+    window.addEventListener('focus', refreshWhenActive);
+    window.addEventListener('online', refreshWhenActive);
+    document.addEventListener('visibilitychange', refreshWhenActive);
 
     // Realtime subscriptions (non-blocking)
     try {
-      const handleProfileUpdate = () => {
-        supabase.from('profiles').select('*, user_roles(role)').then(({ data }) => {
-          if (data) {
-            const getRole = (p: any) => {
-              if (Array.isArray(p.user_roles)) return p.user_roles[0]?.role || 'Worker';
-              return p.user_roles?.role || 'Worker';
-            };
-            const mappedProfiles = data.map((p: any) => ({ ...p, role: getRole(p) }));
-            set({ profiles: mappedProfiles });
-            const { currentUser } = get();
-            if (currentUser) {
-              const updatedProfile = mappedProfiles.find(p => p.id === currentUser.id);
-              if (updatedProfile) set({ currentUser: updatedProfile as any });
-            }
-          }
-        });
-      };
+      const refreshWorkspace = () => void get().refreshData();
 
       supabase.channel('rt-tasks')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, (payload) => {
+          const deletedTaskId = payload.eventType === 'DELETE'
+            ? (payload.old as Partial<Task>).id
+            : null;
+
+          // A DELETE normally includes the primary key. If it does not, fetch the
+          // authoritative task list instead of leaving a stale task in local state.
+          if (payload.eventType === 'DELETE' && !deletedTaskId) {
+            void get().refreshData();
+            return;
+          }
+
           set((state) => {
             const currentTasks = state.tasks;
             const currentArchivedTasks = state.archivedTasks;
@@ -609,22 +646,26 @@ export const useStore = create<StoreState>((set, get) => ({
             }
             if (payload.eventType === 'DELETE') {
               return {
-                tasks: currentTasks.filter(task => task.id !== payload.old.id),
-                archivedTasks: currentArchivedTasks.filter(task => task.id !== payload.old.id)
+                tasks: currentTasks.filter(task => task.id !== deletedTaskId),
+                archivedTasks: currentArchivedTasks.filter(task => task.id !== deletedTaskId)
               };
             }
             return state;
           });
           get().checkTaskDeadlines();
         })
-        .subscribe();
+        .subscribe(status => {
+          // Realtime can reconnect after changes occurred. A fresh server read on
+          // every successful subscription closes that gap for all admins.
+          if (status === 'SUBSCRIBED') void get().refreshData();
+        });
 
       supabase.channel('rt-profiles')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, handleProfileUpdate)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, refreshWorkspace)
         .subscribe();
 
       supabase.channel('rt-user-roles')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'user_roles' }, handleProfileUpdate)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'user_roles' }, refreshWorkspace)
         .subscribe();
 
       supabase.channel('rt-categories')
@@ -647,16 +688,45 @@ export const useStore = create<StoreState>((set, get) => ({
 
       supabase.channel('rt-ticket-requests')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'ticket_requests' }, () => {
-          if (get().currentUser?.role === 'Admin') get().fetchTicketRequests();
+          void get().fetchTicketRequests();
+        })
+        .subscribe();
+
+      supabase.channel('rt-report-schedules')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'report_schedules' }, () => {
+          if (get().currentUser?.role === 'Admin') void get().fetchReportSchedules();
         })
         .subscribe();
     } catch (e) {
       console.warn('Realtime subscriptions failed (non-critical):', e);
     }
+
+    _disposeSync = () => {
+      window.clearInterval(refreshInterval);
+      window.removeEventListener('focus', refreshWhenActive);
+      window.removeEventListener('online', refreshWhenActive);
+      document.removeEventListener('visibilitychange', refreshWhenActive);
+      authListener.subscription.unsubscribe();
+      void supabase.removeAllChannels();
+    };
+  },
+
+  dispose: () => {
+    _disposeSync?.();
+    _disposeSync = null;
+    _initialized = false;
+    ++_loadSequence;
+    ++_lifecycleGeneration;
   },
 
   addTask: async (taskData) => {
     try {
+      if (get().currentUser?.role !== 'Admin' && !taskData.is_self_task) {
+        const error = new Error('Workers can create only private tasks.');
+        get().setAlertData({ message: error.message, type: 'error' });
+        return { success: false, error };
+      }
+
       if (!hasPublicTaskOwner(taskData)) {
         get().setAlertData({ message: 'Tasks must have at least one assignee.', type: 'error' });
         return { success: false, error: new Error('Tasks must have at least one assignee.') };
@@ -664,17 +734,18 @@ export const useStore = create<StoreState>((set, get) => ({
 
       const { data, error } = await supabase.from('tasks').insert([taskData]).select().single();
       if (error) {
-        get().setAlertData({ message: "Error adding task: " + error.message, type: 'error' });
+        get().setAlertData({ message: 'Error adding task: ' + error.message, type: 'error' });
         return { success: false, error };
       }
-        set((state) => ({ tasks: [...state.tasks, data] }));
-        get().refreshData(); // Sync for non-realtime users
-
-        return { success: true, data };
-      return { success: false };
-    } catch (err: any) {
-      get().setAlertData({ message: "Network or session error: " + err.message, type: 'error' });
-      return { success: false, error: err };
+      set((state) => ({ tasks: [...state.tasks, data] }));
+      void get().refreshData(); // Sync for clients whose realtime connection is unavailable.
+      return { success: true, data };
+    } catch (error: unknown) {
+      get().setAlertData({
+        message: `Network or session error: ${asErrorLike(error).message || 'Unknown error'}`,
+        type: 'error'
+      });
+      return { success: false, error };
     }
   },
 
@@ -694,7 +765,11 @@ export const useStore = create<StoreState>((set, get) => ({
     }));
     const { error } = await supabase.from('tasks').update(updates).eq('id', taskId);
     if (error) {
-      set({ tasks: prevTasks });
+      if (currentTask) {
+        set(state => ({
+          tasks: state.tasks.map(task => task.id === taskId ? currentTask : task)
+        }));
+      }
       get().setAlertData({ message: "Error updating task: " + error.message, type: 'error' });
     } else {
       get().refreshData(); // Sync for non-realtime users
@@ -704,13 +779,17 @@ export const useStore = create<StoreState>((set, get) => ({
 
   updateTaskStatus: async (taskId, status) => {
     // Optimistic update for instant UI
-    const prevTasks = get().tasks;
+    const previousTask = get().tasks.find(task => task.id === taskId);
     set((state) => ({
       tasks: state.tasks.map(t => t.id === taskId ? { ...t, status } : t)
     }));
     const { error } = await supabase.from('tasks').update({ status }).eq('id', taskId);
     if (error) {
-      set({ tasks: prevTasks });
+      if (previousTask) {
+        set(state => ({
+          tasks: state.tasks.map(task => task.id === taskId ? previousTask : task)
+        }));
+      }
       get().setAlertData({ message: "Error updating status: " + error.message, type: 'error' });
     } else {
       get().refreshData(); // Sync for non-realtime users
@@ -725,7 +804,12 @@ export const useStore = create<StoreState>((set, get) => ({
     }));
     const { error } = await supabase.from('user_roles').update({ role }).eq('user_id', userId);
     if (error) {
-      set({ profiles: prevProfiles });
+      const previousProfile = prevProfiles.find(profile => profile.id === userId);
+      if (previousProfile) {
+        set(state => ({
+          profiles: state.profiles.map(profile => profile.id === userId ? previousProfile : profile)
+        }));
+      }
       get().setAlertData({ message: "Error updating role: " + error.message, type: 'error' });
     }
   },
@@ -737,7 +821,12 @@ export const useStore = create<StoreState>((set, get) => ({
     }));
     const { error } = await supabase.from('profiles').update({ job_title: jobTitle }).eq('id', userId);
     if (error) {
-      set({ profiles: prevProfiles });
+      const previousProfile = prevProfiles.find(profile => profile.id === userId);
+      if (previousProfile) {
+        set(state => ({
+          profiles: state.profiles.map(profile => profile.id === userId ? previousProfile : profile)
+        }));
+      }
       get().setAlertData({ message: "Error updating job title: " + error.message, type: 'error' });
     }
   },
@@ -760,9 +849,9 @@ export const useStore = create<StoreState>((set, get) => ({
       });
       await get().refreshData();
       return true;
-    } catch (err: any) {
-      console.error('Invitation request failed:', err);
-      const message = await getEdgeFunctionErrorMessage(err, 'Unable to create the invited account.');
+    } catch (error: unknown) {
+      console.error('Invitation request failed:', error);
+      const message = await getEdgeFunctionErrorMessage(error, 'Unable to create the invited account.');
       get().setAlertData({ message, type: 'error' });
       return false;
     }
@@ -788,9 +877,9 @@ export const useStore = create<StoreState>((set, get) => ({
         type: 'success'
       });
       return true;
-    } catch (err: any) {
-      console.error('Password reset failed:', err);
-      const message = await getEdgeFunctionErrorMessage(err, 'Unable to reset this password.');
+    } catch (error: unknown) {
+      console.error('Password reset failed:', error);
+      const message = await getEdgeFunctionErrorMessage(error, 'Unable to reset this password.');
       get().setAlertData({ message, type: 'error' });
       return false;
     }
@@ -813,10 +902,13 @@ export const useStore = create<StoreState>((set, get) => ({
       .eq('id', userId);
 
     if (error) {
-      set({
-        profiles: prevProfiles,
-        currentUser: prevProfiles.find(profile => profile.id === get().currentUser?.id) || get().currentUser
-      });
+      const previousProfile = prevProfiles.find(profile => profile.id === userId);
+      if (previousProfile) {
+        set(state => ({
+          profiles: state.profiles.map(profile => profile.id === userId ? previousProfile : profile),
+          currentUser: state.currentUser?.id === userId ? previousProfile : state.currentUser
+        }));
+      }
       get().setAlertData({ message: `Error updating department: ${error.message}`, type: 'error' });
     } else {
       get().refreshData();
@@ -855,8 +947,8 @@ export const useStore = create<StoreState>((set, get) => ({
         type: 'success'
       });
       return true;
-    } catch (err: any) {
-      const message = await getReminderEmailErrorMessage(err);
+    } catch (error: unknown) {
+      const message = await getReminderEmailErrorMessage(error);
       get().setAlertData({
         message: `Failed to send reminder email: ${message}`,
         type: 'error'
@@ -866,13 +958,13 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   sendEmployeeDeadlineReminders: async (userId) => {
-    const { tasks, profiles } = get();
+    const { tasks, profiles, statuses } = get();
     const user = profiles.find(p => p.id === userId);
     const now = Date.now();
     const remindableTasks = tasks
       .filter(task => (
         isTaskAssignee(task, userId) &&
-        task.status !== 'Done' &&
+        !isTaskComplete(task, statuses) &&
         !task.is_self_task &&
         !!task.end_date &&
         new Date(task.end_date).getTime() > now
@@ -902,27 +994,35 @@ export const useStore = create<StoreState>((set, get) => ({
         message: `Sent one deadline digest with ${remindableTasks.length} task${remindableTasks.length === 1 ? '' : 's'} to ${user.full_name}.`,
         type: 'success'
       });
-    } catch (err: any) {
-      const message = await getReminderEmailErrorMessage(err);
+    } catch (error: unknown) {
+      const message = await getReminderEmailErrorMessage(error);
       get().setAlertData({ message: `Deadline digest was not sent. ${message}`, type: 'error' });
     }
   },
 
   addCategory: async (name, color) => {
-    const { categories } = get();
-    const { data, error } = await supabase.from('categories').insert([{ name, color, sort_order: categories.length }]).select().single();
-    if (data) set((state) => ({ categories: [...state.categories, data] }));
-    else if (error) get().setAlertData({ message: "Error adding category: " + error.message, type: 'error' });
+    const { data, error } = await supabase
+      .rpc('create_category', { category_name: name, category_color: color });
+    if (data) set((state) => ({ categories: [...state.categories, data as Category] }));
+    else if (error) get().setAlertData({ message: 'Error adding category: ' + error.message, type: 'error' });
   },
 
   deleteCategory: async (id) => {
     // Optimistic
-    const prevCategories = get().categories;
+    const category = get().categories.find(candidate => candidate.id === id);
+    if (!category) return;
     set((state) => ({ categories: state.categories.filter(c => c.id !== id) }));
-    const { error } = await supabase.from('categories').delete().eq('id', id);
+    const { error } = await supabase.rpc('delete_category_and_clear', { target_category_id: id });
     if (error) {
-      set({ categories: prevCategories });
+      set(state => ({ categories: [...state.categories.filter(c => c.id !== id), category] }));
       get().setAlertData({ message: "Error deleting category: " + error.message, type: 'error' });
+    } else {
+      set(state => ({
+        tasks: state.tasks.map(task => task.category === category.name ? { ...task, category: null } : task),
+        ticketRequests: state.ticketRequests.map(ticket => (
+          ticket.category === category.name ? { ...ticket, category: null } : ticket
+        ))
+      }));
     }
   },
 
@@ -930,15 +1030,11 @@ export const useStore = create<StoreState>((set, get) => ({
     const trimmedName = name.trim();
     if (!trimmedName) return;
 
-    const { departments } = get();
     const { data, error } = await supabase
-      .from('departments')
-      .insert([{ name: trimmedName, color, sort_order: departments.length }])
-      .select()
-      .single();
+      .rpc('create_department', { department_name: trimmedName, department_color: color });
 
     if (data) {
-      set(state => ({ departments: [...state.departments, data] }));
+      set(state => ({ departments: [...state.departments, data as WorkspaceDepartment] }));
       get().setAlertData({ message: 'Department created.', type: 'success' });
     } else if (error) {
       get().setAlertData({ message: `Error adding department: ${error.message}`, type: 'error' });
@@ -960,7 +1056,14 @@ export const useStore = create<StoreState>((set, get) => ({
       .eq('id', id);
 
     if (error) {
-      set({ departments: prevDepartments });
+      const previousDepartment = prevDepartments.find(department => department.id === id);
+      if (previousDepartment) {
+        set(state => ({
+          departments: state.departments.map(department => (
+            department.id === id ? previousDepartment : department
+          ))
+        }));
+      }
       get().setAlertData({ message: `Error updating department privileges: ${error.message}`, type: 'error' });
       return;
     }
@@ -972,7 +1075,6 @@ export const useStore = create<StoreState>((set, get) => ({
     const department = get().departments.find(candidate => candidate.id === id);
     if (!department) return;
 
-    const prevDepartments = get().departments;
     const prevProfiles = get().profiles;
     set(state => ({
       departments: state.departments.filter(candidate => candidate.id !== id),
@@ -990,11 +1092,17 @@ export const useStore = create<StoreState>((set, get) => ({
       .eq('id', id);
 
     if (error) {
-      set({
-        departments: prevDepartments,
-        profiles: prevProfiles,
-        currentUser: prevProfiles.find(profile => profile.id === get().currentUser?.id) || get().currentUser
-      });
+      set(state => ({
+        departments: [...state.departments.filter(candidate => candidate.id !== id), department],
+        profiles: state.profiles.map(profile => (
+          profile.department === null
+            ? prevProfiles.find(previous => previous.id === profile.id) || profile
+            : profile
+        )),
+        currentUser: state.currentUser?.department === null
+          ? prevProfiles.find(profile => profile.id === state.currentUser?.id) || state.currentUser
+          : state.currentUser
+      }));
       get().setAlertData({ message: `Error deleting department: ${error.message}`, type: 'error' });
     } else {
       get().setAlertData({ message: 'Department removed.', type: 'success' });
@@ -1003,20 +1111,43 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   addStatus: async (name, color) => {
-    const { statuses } = get();
-    const { data, error } = await supabase.from('statuses').insert([{ name, color, sort_order: statuses.length }]).select().single();
-    if (data) set((state) => ({ statuses: [...state.statuses, data] }));
-    else if (error) get().setAlertData({ message: "Error adding status: " + error.message, type: 'error' });
+    const { data, error } = await supabase
+      .rpc('create_status', { status_name: name, status_color: color });
+    if (data) set((state) => ({ statuses: [...state.statuses, data as Status] }));
+    else if (error) get().setAlertData({ message: 'Error adding status: ' + error.message, type: 'error' });
+  },
+
+  setCompletedStatus: async (id) => {
+    const { error } = await supabase.rpc('set_completed_status', { target_status_id: id });
+    if (error) {
+      get().setAlertData({ message: `Error updating completed status: ${error.message}`, type: 'error' });
+      return;
+    }
+    set(state => ({
+      statuses: state.statuses.map(status => ({ ...status, is_completed: status.id === id }))
+    }));
+    get().checkTaskDeadlines();
+    get().setAlertData({ message: 'Completed status updated.', type: 'success' });
   },
 
   deleteStatus: async (id) => {
-    // Optimistic
-    const prevStatuses = get().statuses;
+    const status = get().statuses.find(candidate => candidate.id === id);
+    if (!status) return;
+    const replacement = get().statuses.find(candidate => candidate.id !== id);
     set((state) => ({ statuses: state.statuses.filter(s => s.id !== id) }));
-    const { error } = await supabase.from('statuses').delete().eq('id', id);
+    const { error } = await supabase.rpc('delete_status_and_reassign', {
+      target_status_id: id,
+      replacement_status_id: replacement?.id || null
+    });
     if (error) {
-      set({ statuses: prevStatuses });
+      set(state => ({ statuses: [...state.statuses.filter(s => s.id !== id), status] }));
       get().setAlertData({ message: "Error deleting status: " + error.message, type: 'error' });
+    } else if (replacement) {
+      set(state => ({
+        tasks: state.tasks.map(task => task.status === status.name
+          ? { ...task, status: replacement.name }
+          : task)
+      }));
     }
   },
 
@@ -1036,8 +1167,10 @@ export const useStore = create<StoreState>((set, get) => ({
         })
       });
       set({ alertData: { message: 'User successfully erased from workspace', type: 'success' } });
-    } catch (err: any) {
-      set({ alertData: { message: err.message || 'Failed to erase user', type: 'error' } });
+    } catch (error: unknown) {
+      set({
+        alertData: { message: asErrorLike(error).message || 'Failed to erase user', type: 'error' }
+      });
     }
   },
 
@@ -1180,6 +1313,7 @@ export const useStore = create<StoreState>((set, get) => ({
     if (!task) return false;
 
     set(state => ({
+      tasks: state.tasks.filter(candidate => candidate.id !== id),
       archivedTasks: state.archivedTasks.filter(candidate => candidate.id !== id)
     }));
 
@@ -1211,6 +1345,7 @@ export const useStore = create<StoreState>((set, get) => ({
     if (taskIds.length === 0) return false;
 
     set(state => ({
+      tasks: state.tasks.filter(task => !taskIds.includes(task.id)),
       archivedTasks: state.archivedTasks.filter(task => !taskIds.includes(task.id))
     }));
 
@@ -1289,10 +1424,9 @@ export const useStore = create<StoreState>((set, get) => ({
         type: 'success'
       });
       return true;
-    } catch (err: any) {
-      const message = await getReminderEmailErrorMessage(err);
-      const context = err?.context;
-      const status = context?.status || context?.response?.status;
+    } catch (error: unknown) {
+      const message = await getReminderEmailErrorMessage(error);
+      const status = getContextStatus(asErrorLike(error).context);
 
       if (status === 404 || message.includes('Failed to send a request to the Edge Function')) {
         get().setAlertData({
@@ -1318,7 +1452,8 @@ export const useStore = create<StoreState>((set, get) => ({
       schedule_type: schedule.schedule_type,
       time_of_day: schedule.time_of_day,
       day_of_week: schedule.day_of_week ?? null,
-      day_of_month: schedule.day_of_month ?? null
+      day_of_month: schedule.day_of_month ?? null,
+      timezone: schedule.timezone
     }]).select().single();
 
     if (error) {
@@ -1386,7 +1521,7 @@ export const useStore = create<StoreState>((set, get) => ({
       return false;
     }
 
-    if (currentUser.role === 'Admin' && data) {
+    if (data) {
       set(state => ({ ticketRequests: [data, ...state.ticketRequests] }));
     }
 
@@ -1395,7 +1530,7 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   fetchTicketRequests: async () => {
-    if (get().currentUser?.role !== 'Admin') {
+    if (!get().currentUser) {
       set({ ticketRequests: [] });
       return;
     }
@@ -1414,21 +1549,34 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   updateTicketRequestStatus: async (id, status) => {
-    const previousTickets = get().ticketRequests;
+    const previousTicket = get().ticketRequests.find(ticket => ticket.id === id);
     set(state => ({
       ticketRequests: state.ticketRequests.map(ticket => (
         ticket.id === id ? { ...ticket, status } : ticket
       ))
     }));
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('ticket_requests')
       .update({ status })
-      .eq('id', id);
+      .eq('id', id)
+      .select()
+      .single();
 
     if (error) {
-      set({ ticketRequests: previousTickets });
+      if (previousTicket) {
+        set(state => ({
+          ticketRequests: state.ticketRequests.map(ticket => (
+            ticket.id === id ? previousTicket : ticket
+          ))
+        }));
+      }
       get().setAlertData({ message: `Error updating ticket: ${error.message}`, type: 'error' });
+    } else if (data) {
+      set(state => ({
+        ticketRequests: state.ticketRequests.map(ticket => ticket.id === id ? data : ticket)
+      }));
+      if (status === 'Approved') void get().refreshData();
     }
   },
 
@@ -1437,6 +1585,7 @@ export const useStore = create<StoreState>((set, get) => ({
     if (!currentUser) return [];
 
     return tasks.filter(task => {
+      if (task.is_recurring && !task.parent_task_id) return false;
       // 1. Never count private self-tasks in the 'overall' dashboard/totals
       if (task.is_self_task) return false;
 

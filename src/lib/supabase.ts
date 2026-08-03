@@ -45,6 +45,8 @@ export interface ReportSchedule {
   next_run_at: string;
   last_run_at: string | null;
   is_active: boolean;
+  timezone: string;
+  claimed_at: string | null;
   created_at: string;
 }
 
@@ -60,6 +62,7 @@ export interface Status {
   name: string;
   color: string;
   sort_order: number;
+  is_completed: boolean;
 }
 
 export type RecurrenceType = 'daily' | 'weekly' | 'monthly';
@@ -71,12 +74,12 @@ export interface Task {
   title: string;
   description: string;
   assignee_id: string | null;
-  assignee_ids?: string[];
-  creator_id: string;
+  assignee_ids?: string[] | null;
+  creator_id: string | null;
   status: string;
   priority?: TaskPriority;
   category: string | null;
-  observers: string[];
+  observers: string[] | null;
   is_self_task?: boolean;
   start_date?: string;
   end_date?: string;
@@ -92,6 +95,9 @@ export interface Task {
   recurrence_day?: number | null;    // 0-6 for weekly (Sun-Sat), 1-31 for monthly
   next_recurrence_at?: string | null;
   parent_task_id?: string | null;
+  recurrence_claimed_at?: string | null;
+  recurrence_key?: string | null;
+  recurrence_timezone?: string | null;
 }
 
 export interface TicketRequest {
@@ -106,6 +112,7 @@ export interface TicketRequest {
   status: TicketStatus;
   created_at: string;
   updated_at: string;
+  linked_task_id: string | null;
 }
 
 export const getTaskAssigneeIds = (
@@ -119,6 +126,16 @@ export const isTaskAssignee = (
   task: Pick<Task, 'assignee_id' | 'assignee_ids'>,
   userId?: string | null
 ) => Boolean(userId && getTaskAssigneeIds(task).includes(userId));
+
+export const getCompletedStatus = (statuses: Status[]) => (
+  statuses.find(status => status.is_completed)
+  || statuses.find(status => ['done', 'completed', 'complete'].includes(status.name.toLowerCase()))
+  || null
+);
+
+export const isTaskComplete = (task: Pick<Task, 'status'>, statuses: Status[]) => (
+  getCompletedStatus(statuses)?.name === task.status
+);
 
 export const canViewTaskByDepartment = (
   task: Task,
@@ -138,7 +155,7 @@ export const canViewTaskByDepartment = (
   }
 
   const participantIds = new Set([
-    task.creator_id,
+    ...(task.creator_id ? [task.creator_id] : []),
     ...getTaskAssigneeIds(task),
     ...(task.observers || [])
   ]);

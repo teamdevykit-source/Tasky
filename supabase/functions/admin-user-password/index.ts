@@ -151,6 +151,14 @@ Deno.serve(async (req) => {
   }
 
   const appUrl = normalizeAppUrl(Deno.env.get('APP_URL'));
+  const { data: rateAllowed, error: rateError } = await supabase.rpc('consume_api_rate_limit', {
+    actor_id: authData.user.id,
+    action_key: `admin-password:${payload.action}`,
+    max_attempts: 20,
+    window_seconds: 3600
+  });
+  if (rateError) return jsonResponse({ error: 'Unable to verify the request rate.' }, 503);
+  if (!rateAllowed) return jsonResponse({ error: 'Too many requests. Try again later.' }, 429);
 
   if (payload.action === 'invite') {
     const email = payload.email?.trim().toLowerCase();

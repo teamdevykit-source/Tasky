@@ -40,8 +40,8 @@ export const TicketsView: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   React.useEffect(() => {
-    if (currentUser?.role === 'Admin') fetchTicketRequests();
-  }, [currentUser?.role, fetchTicketRequests]);
+    if (currentUser) void fetchTicketRequests();
+  }, [currentUser, fetchTicketRequests]);
 
   if (!currentUser) return null;
 
@@ -113,6 +113,27 @@ export const TicketsView: React.FC = () => {
             categoryColor={selectedCategoryColor}
           />
         </div>
+        <section style={{ marginTop: '1.5rem' }}>
+          <h2 style={{ color: 'var(--text-2)', fontSize: '1rem', marginBottom: '0.75rem' }}>
+            My request history
+          </h2>
+          {ticketRequests.length === 0 ? (
+            <p style={{ color: 'var(--text-4)', fontSize: '0.85rem' }}>No requests submitted yet.</p>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
+              {ticketRequests.map(ticket => (
+                <AdminTicketCard
+                  key={ticket.id}
+                  ticket={ticket}
+                  requesterName={currentUser.full_name}
+                  categoryColor={categories.find(cat => cat.name === ticket.category)?.color || '#64748b'}
+                  onStatusChange={() => undefined}
+                  readOnly
+                />
+              ))}
+            </div>
+          )}
+        </section>
       </div>
     );
   }
@@ -290,12 +311,14 @@ const AdminTicketCard = ({
   ticket,
   requesterName,
   categoryColor,
-  onStatusChange
+  onStatusChange,
+  readOnly = false
 }: {
   ticket: TicketRequest;
   requesterName: string;
   categoryColor: string;
   onStatusChange: (status: TicketStatus) => void;
+  readOnly?: boolean;
 }) => {
   const priorityColor = PRIORITY_OPTIONS.find(option => option.value === ticket.priority)?.color || '#f59e0b';
   const statusColor = TICKET_STATUS_OPTIONS.find(option => option.value === ticket.status)?.color || '#3b82f6';
@@ -318,13 +341,17 @@ const AdminTicketCard = ({
         <span>{ticket.start_date || ticket.end_date ? `${formatDateTime(ticket.start_date || undefined)} - ${formatDateTime(ticket.end_date || undefined)}` : 'No timeline requested'}</span>
       </div>
       <div style={{ marginTop: '0.85rem' }}>
-        <AppSelect
-          value={ticket.status}
-          onChange={value => onStatusChange(value as TicketStatus)}
-          options={TICKET_STATUS_OPTIONS}
-          accentColor={statusColor}
-          compact
-        />
+        {readOnly ? (
+          <span style={tagStyle(statusColor)}>{ticket.status}</span>
+        ) : (
+          <AppSelect
+            value={ticket.status}
+            onChange={value => onStatusChange(value as TicketStatus)}
+            options={TICKET_STATUS_OPTIONS}
+            accentColor={statusColor}
+            compact
+          />
+        )}
       </div>
     </article>
   );

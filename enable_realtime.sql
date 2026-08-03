@@ -1,37 +1,30 @@
--- 1. Enable Realtime for all tables
--- This adds the tables to the supabase_realtime publication, which is
--- the mechanism Supabase uses to stream changes to clients.
-BEGIN;
-  -- Remove existing publication if any, and recreate it for a clean start
-  DROP PUBLICATION IF EXISTS supabase_realtime;
-  CREATE PUBLICATION supabase_realtime;
-COMMIT;
+-- Legacy convenience script retained for operators who run it manually.
+-- Realtime publication changes must be additive; never drop the shared publication.
+DO $$
+DECLARE
+  table_name text;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+    RAISE EXCEPTION 'Supabase Realtime publication does not exist.';
+  END IF;
 
--- 2. Add public tables to the publication
-ALTER PUBLICATION supabase_realtime ADD TABLE public.tasks;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.categories;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.statuses;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.user_roles;
+  FOREACH table_name IN ARRAY ARRAY[
+    'tasks', 'profiles', 'user_roles', 'categories', 'statuses',
+    'departments', 'ticket_requests', 'report_schedules'
+  ] LOOP
+    IF to_regclass('public.' || table_name) IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1
+        FROM pg_publication_tables
+        WHERE pubname = 'supabase_realtime'
+          AND schemaname = 'public'
+          AND tablename = table_name
+      )
+    THEN
+      EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE public.%I', table_name);
+    END IF;
+  END LOOP;
+END;
+$$;
 
--- 3. Set Replica Identity to FULL for all tables
--- This ensures that when a record is UPDATED or DELETED, 
--- Realtime sends the full old record so the frontend can react properly.
 ALTER TABLE public.tasks REPLICA IDENTITY FULL;
-ALTER TABLE public.profiles REPLICA IDENTITY FULL;
-ALTER TABLE public.categories REPLICA IDENTITY FULL;
-ALTER TABLE public.statuses REPLICA IDENTITY FULL;
-ALTER TABLE public.user_roles REPLICA IDENTITY FULL;
-
--- 4. Ensure RLS doesn't block the Realtime engine
--- Some Realtime implementations need to check the 'authenticated' role
--- which is already handled in your existing policies.
-
--- IMPORTANT: In some Supabase configurations, you must explicitly 
--- grant permissions on the REALTIME schema for users to subscribe.
-GRANT USAGE ON SCHEMA realtime TO authenticated;
-GRANT SELECT ON ALL TABLES IN SCHEMA realtime TO authenticated;
-
--- Ensure authenticated role can also see the publication 
--- (This is usually default but good to be explicit for 'security' issues)
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO authenticated;

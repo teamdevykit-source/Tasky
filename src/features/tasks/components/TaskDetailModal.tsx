@@ -54,14 +54,16 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
   
   // PERMISSIONS:
   // 1. If self-task: ONLY the creator can edit/delete.
-  // 2. If regular task: Creator, Assignee, or Admin can edit/delete.
-  const canEdit = task.is_self_task 
+  // Assignees may change status; task ownership and scheduling fields remain
+  // creator/admin managed and are enforced by the database as well.
+  const canEditStatus = task.is_self_task
     ? (currentUser.id === task.creator_id)
     : (!isObserver && (
       currentUser.role === 'Admin' ||
       isTaskAssignee(task, currentUser.id) ||
       currentUser.id === task.creator_id
     ));
+  const canEditDetails = currentUser.role === 'Admin' || currentUser.id === task.creator_id;
   const canDelete = task.is_self_task 
     ? (currentUser.id === task.creator_id)
     : (currentUser.role === 'Admin' || currentUser.id === task.creator_id);
@@ -96,9 +98,9 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
     try {
       await deleteTask(task.id);
       onClose();
-    } catch (e: any) {
+    } catch (error: unknown) {
       // In case it throws an error instead of just alerting in store
-      console.error(e);
+      console.error(error);
     }
   };
 
@@ -116,6 +118,7 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
       recurrence_type: recurrenceType,
       recurrence_time: recurrenceTime,
       recurrence_day: recurrenceType === 'daily' ? null : recurrenceDay,
+      recurrence_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Cairo',
       next_recurrence_at: computeNextRecurrence(
         recurrenceType,
         recurrenceTime,
@@ -433,7 +436,7 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
                   <Bell size={12} style={{ display: 'inline', marginRight: '0.3rem', opacity: 0.5 }} />
                   Email Reminder
                 </h3>
-                {canEdit ? (
+                {canEditDetails ? (
                   <>
                     <AppDateTimePicker
                       value={task.reminder_at || ''}
@@ -482,7 +485,7 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
                   border: '1px solid rgba(52,211,153,0.15)', padding: '0.8rem',
                   display: 'flex', flexDirection: 'column', gap: '0.5rem'
                 }}>
-                  {canEdit ? (
+                  {canEditDetails ? (
                     <>
                       <AppSelect
                         value={task.recurrence_type}
@@ -585,7 +588,7 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
             {/* Priority Control */}
             <div>
               <h3 style={metaLabel}>Priority</h3>
-              {canEdit ? (
+              {canEditDetails ? (
                 <AppSelect
                   value={priority}
                   onChange={value => updateTask(task.id, { priority: value as TaskPriority })}
@@ -607,7 +610,7 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
             {/* Status Control */}
             <div style={{ marginTop: 'auto' }}>
               <h3 style={metaLabel}>Status</h3>
-              {canEdit ? (
+              {canEditStatus ? (
                 <AppSelect
                   value={task.status}
                   onChange={(value) => updateTaskStatus(task.id, value)}

@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { useStore } from '../../../store/useStore';
 import { BarChart, Activity, Users, Zap, LayoutDashboard, Target, ShieldCheck, ChevronDown, ChevronUp, Mail, Download } from 'lucide-react';
-import { getTaskAssigneeIds, isTaskAssignee } from '../../../lib/supabase';
+import { getTaskAssigneeIds, isTaskAssignee, isTaskComplete, type Profile } from '../../../lib/supabase';
 import { downloadEmployeeSummary } from '../../../lib/exportExcel';
 import EmployeeScoreModal from './EmployeeScoreModal';
 import ScheduleReportModal from './ScheduleReportModal';
@@ -19,36 +19,37 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
   const setAdminSettingsTab = useStore(s => s.setAdminSettingsTab);
 
   const getDashboardTasks = useStore(s => s.getDashboardTasks);
-  const visibleTasks = useMemo(() => getDashboardTasks(), [getDashboardTasks, tasks]);
+  const visibleTasks = getDashboardTasks();
 
   const stats = useMemo(() => {
     const total = visibleTasks.length;
     
-    // We assume the last status is "Done" or "Completed", or we just take tasks that have the last status.
-    // If no explicit "Done" status, we just count them by grouping.
     const byStatus = statuses.map(s => ({
       ...s,
-      count: visibleTasks.filter((t: any) => t.status === s.name).length
+      count: visibleTasks.filter(task => task.status === s.name).length
     }));
     
     // Catch orphaned tasks
-    const unmappedTasks = visibleTasks.filter((t: any) => !statuses.find(s => s.name === t.status)).length;
+    const unmappedTasks = visibleTasks.filter(task => !statuses.find(s => s.name === task.status)).length;
     if (unmappedTasks > 0) {
       byStatus.push({
         id: 'unmapped-status',
         name: 'Unmapped',
         color: '#ff4444',
         sort_order: 999,
+        is_completed: false,
         count: unmappedTasks
       });
     }
     
     const byCategory = categories.map(c => ({
       ...c,
-      count: visibleTasks.filter((t: any) => t.category === c.name).length
+      count: visibleTasks.filter(task => task.category === c.name).length
     }));
     
-    const unmappedCat = visibleTasks.filter((t: any) => t.category && !categories.find(c => c.name === t.category)).length;
+    const unmappedCat = visibleTasks.filter(task => (
+      task.category && !categories.find(category => category.name === task.category)
+    )).length;
     if (unmappedCat > 0) {
       byCategory.push({
         id: 'unmapped-cat',
@@ -66,17 +67,22 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
       Worker: profiles.filter(p => p.role === 'Worker').length
     };
 
-    const selfTasks = visibleTasks.filter((t: any) => t.is_self_task).length;
+    const selfTasks = tasks.filter(task => (
+      task.is_self_task
+      && task.creator_id === currentUser?.id
+      && !(task.is_recurring && !task.parent_task_id)
+    )).length;
 
     return { total, byStatus, byCategory, myTasks, totalUsers: profiles.length, byRole, selfTasks };
-  }, [visibleTasks, statuses, categories, currentUser]);
+  }, [visibleTasks, statuses, categories, currentUser, profiles, tasks]);
 
-  const [selectedProfile, setSelectedProfile] = React.useState<any | null>(null);
+  const [selectedProfile, setSelectedProfile] = React.useState<Profile | null>(null);
   const [modalOpen, setModalOpen] = React.useState(false);
   const [scheduleModalOpen, setScheduleModalOpen] = React.useState(false);
   const teamDirectoryProfiles = showAllTeamDirectory ? profiles : profiles.slice(0, 6);
 
-  const openEmployeeModal = (p: any) => {
+  const openEmployeeModal = (p: Profile) => {
+    if (currentUser?.role !== 'Admin' && p.id !== currentUser?.id) return;
     setSelectedProfile(p);
     setModalOpen(true);
   };
@@ -116,7 +122,7 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
                 <Mail size={16} /> Email Report
               </button>
             )}
-            <button className="primary-btn" onClick={() => downloadEmployeeSummary(visibleTasks as any, profiles, statuses)} style={{ background: 'var(--surface-2)', color: 'var(--text-1)' }}>
+            <button className="primary-btn" onClick={() => downloadEmployeeSummary(visibleTasks, profiles, statuses)} style={{ background: 'var(--surface-2)', color: 'var(--text-1)' }}>
               <Download size={16} /> Export Excel
             </button>
             <button className="primary-btn" onClick={onOpenCreateModal}>
@@ -203,7 +209,7 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
                 <button
                   className="dashboard-progress-row"
                   key={s.id}
-                  onClick={() => openTaskBoard(s.name === 'Unmapped' ? {} : { status: s.name })}
+                  onClick={() => openTaskBoard({ status: s.name === 'Unmapped' ? '__unmapped__' : s.name })}
                   style={{
                     background: 'transparent',
                     border: 'none',
@@ -237,10 +243,16 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
           </h2>
           
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
-            {stats.byCategory.sort((a,b) => b.count - a.count).map(c => {
+            {[...stats.byCategory].sort((a,b) => b.count - a.count).map(c => {
               if (c.count === 0) return null;
               return (
-                <button className="dashboard-category-card" key={c.id} onClick={() => openTaskBoard({ category: c.name })} style={{ 
+                <button
+                  className="dashboard-category-card"
+                  key={c.id}
+                  onClick={() => openTaskBoard({
+                    category: c.name === 'Unmapped' ? '__unmapped__' : c.name
+                  })}
+                  style={{
                   display: 'flex', alignItems: 'center', gap: '0.6rem',
                   background: 'var(--surface-2)', padding: '0.75rem 1rem', 
                   borderRadius: 'var(--radius-lg)', border: '1px solid var(--border)',
@@ -301,12 +313,8 @@ export const DashboardAnalytics: React.FC<{ onOpenCreateModal: () => void }> = (
               <div className="team-directory-score-grid">
                 {teamDirectoryProfiles.map(p => {
                   // compute assigned tasks and completion percent
-                  const assigned = visibleTasks.filter((t: any) => getTaskAssigneeIds(t).includes(p.id));
-                  const maxSort = statuses.length > 0 ? Math.max(...statuses.map(s => s.sort_order || 0)) : 0;
-                  const completed = assigned.filter((t: any) => {
-                    const st = statuses.find(s => s.name === t.status);
-                    return !!st && (st.sort_order || 0) === maxSort;
-                  }).length;
+                  const assigned = visibleTasks.filter(task => getTaskAssigneeIds(task).includes(p.id));
+                  const completed = assigned.filter(task => isTaskComplete(task, statuses)).length;
                   const pct = assigned.length > 0 ? Math.round((completed / assigned.length) * 100) : 0;
 
                   return (

@@ -5,12 +5,14 @@ import { AppSelect } from '../../../components/Shared/AppSelect';
 import { formatDateTime, formatTime12Hour } from '../../../lib/format';
 import { computeNextRecurrence } from '../../../lib/recurrence';
 import {
+  getCompletedStatus,
   getTaskAssigneeIds,
   isTaskAssignee,
   type RecurrenceType,
   type Task
 } from '../../../lib/supabase';
 import { useStore } from '../../../store/useStore';
+import { useCurrentTime } from '../../../lib/useCurrentTime';
 
 const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -50,6 +52,7 @@ export const RecurringTasksView: React.FC<{ onSelectTask: (id: string | null) =>
   const categories = useStore(s => s.categories);
   const updateTask = useStore(s => s.updateTask);
   const setAlertData = useStore(s => s.setAlertData);
+  const currentTime = useCurrentTime();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [scope, setScope] = useState<'all' | 'team' | 'private'>('all');
@@ -58,7 +61,7 @@ export const RecurringTasksView: React.FC<{ onSelectTask: (id: string | null) =>
   const [frequencyFilter, setFrequencyFilter] = useState<'all' | RecurrenceType>('all');
   const [timingFilter, setTimingFilter] = useState<'all' | 'due-soon' | 'overdue'>('all');
 
-  const doneStatus = statuses.find(s => s.name.toLowerCase() === 'done')?.name || 'Done';
+  const doneStatus = getCompletedStatus(statuses)?.name;
 
   const recurringRows = useMemo(() => {
     if (!currentUser) return [];
@@ -71,7 +74,9 @@ export const RecurringTasksView: React.FC<{ onSelectTask: (id: string | null) =>
       ))
       .map(template => {
         const occurrences = tasks.filter(task => task.parent_task_id === template.id);
-        const completedCount = occurrences.filter(task => task.status === doneStatus).length;
+        const completedCount = doneStatus
+          ? occurrences.filter(task => task.status === doneStatus).length
+          : 0;
         const latestOccurrence = getLatestOccurrence(occurrences);
         const progress = occurrences.length > 0
           ? Math.round((completedCount / occurrences.length) * 100)
@@ -103,8 +108,8 @@ export const RecurringTasksView: React.FC<{ onSelectTask: (id: string | null) =>
         const nextRun = new Date(row.template.next_recurrence_at || '');
         const isValidNextRun = !Number.isNaN(nextRun.getTime());
         const matchesTiming = timingFilter === 'all' ||
-          (timingFilter === 'due-soon' && isValidNextRun && nextRun.getTime() <= Date.now() + (24 * 60 * 60 * 1000)) ||
-          (timingFilter === 'overdue' && isValidNextRun && nextRun.getTime() <= Date.now());
+          (timingFilter === 'due-soon' && isValidNextRun && nextRun.getTime() <= currentTime + (24 * 60 * 60 * 1000)) ||
+          (timingFilter === 'overdue' && isValidNextRun && nextRun.getTime() <= currentTime);
 
         return matchesSearch && matchesScope && matchesPerson && matchesCategory && matchesFrequency && matchesTiming;
       })
@@ -112,7 +117,18 @@ export const RecurringTasksView: React.FC<{ onSelectTask: (id: string | null) =>
         new Date(a.template.next_recurrence_at || 0).getTime() -
         new Date(b.template.next_recurrence_at || 0).getTime()
       ));
-  }, [currentUser, tasks, doneStatus, searchQuery, scope, personFilter, categoryFilter, frequencyFilter, timingFilter]);
+  }, [
+    currentUser,
+    tasks,
+    doneStatus,
+    searchQuery,
+    scope,
+    personFilter,
+    categoryFilter,
+    frequencyFilter,
+    timingFilter,
+    currentTime
+  ]);
 
   if (!currentUser) return null;
 
@@ -158,7 +174,7 @@ export const RecurringTasksView: React.FC<{ onSelectTask: (id: string | null) =>
 
   const nextDueCount = recurringRows.filter(row => {
     const next = new Date(row.template.next_recurrence_at || '');
-    return !Number.isNaN(next.getTime()) && next.getTime() <= Date.now() + (24 * 60 * 60 * 1000);
+    return !Number.isNaN(next.getTime()) && next.getTime() <= currentTime + (24 * 60 * 60 * 1000);
   }).length;
 
   return (
@@ -338,7 +354,7 @@ export const RecurringTasksView: React.FC<{ onSelectTask: (id: string | null) =>
           const statusColor = statuses.find(s => s.name === (row.latestOccurrence?.status || template.status))?.color || '#34d399';
           const categoryColor = categories.find(c => c.name === template.category)?.color || '#64748b';
           const isDueSoon = template.next_recurrence_at &&
-            new Date(template.next_recurrence_at).getTime() <= Date.now() + (24 * 60 * 60 * 1000);
+            new Date(template.next_recurrence_at).getTime() <= currentTime + (24 * 60 * 60 * 1000);
 
           return (
             <div

@@ -1,7 +1,13 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.101.1';
-import * as XLSX from 'npm:xlsx@0.18.5';
 // @deno-types="npm:@types/nodemailer@6.4.17"
 import nodemailer from 'npm:nodemailer@6.9.16';
+
+type SupabaseClient = ReturnType<typeof createClient>;
+type ErrorLike = { message?: string; name?: string; code?: string };
+
+const asError = (error: unknown): ErrorLike => (
+  typeof error === 'object' && error !== null ? error as ErrorLike : {}
+);
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -60,6 +66,7 @@ type TaskRecord = {
   recurrence_day: number | null;
   next_recurrence_at: string | null;
   parent_task_id: string | null;
+  recurrence_timezone: string | null;
 };
 
 type ProfileRecord = {
@@ -89,6 +96,7 @@ type MailMessage = {
   text: string;
   html: string;
   attachments?: MailAttachment[];
+  messageId?: string;
 };
 
 const jsonResponse = (body: unknown, status = 200) => (
@@ -100,6 +108,22 @@ const jsonResponse = (body: unknown, status = 200) => (
     }
   })
 );
+
+const consumeRateLimit = async (
+  supabase: SupabaseClient,
+  actorId: string,
+  action: string,
+  maxAttempts: number
+) => {
+  const { data, error } = await supabase.rpc('consume_api_rate_limit', {
+    actor_id: actorId,
+    action_key: action,
+    max_attempts: maxAttempts,
+    window_seconds: 3600
+  });
+  if (error) throw new Error('Unable to verify the request rate.');
+  return data === true;
+};
 
 const formatDate = (value: string | null) => {
   if (!value) return 'No deadline set';
@@ -118,8 +142,8 @@ const escapeHtml = (value: string | null | undefined) => (
     .replace(/'/g, '&#039;')
 );
 
-const getSupabaseErrorMessage = (label: string, error: any) => (
-  error ? `${label}: ${error.message || 'Unknown database error'}` : null
+const getSupabaseErrorMessage = (label: string, error: unknown) => (
+  error ? `${label}: ${asError(error).message || 'Unknown database error'}` : null
 );
 
 const getAssigneeIds = (task: TaskRecord) => (
@@ -127,67 +151,6 @@ const getAssigneeIds = (task: TaskRecord) => (
     ? task.assignee_ids
     : (task.assignee_id ? [task.assignee_id] : [])
 );
-
-const parseRecurrenceTime = (time?: string | null) => {
-  const [hour = 9, minute = 0] = (time || '09:00').split(':').map(Number);
-  return {
-    hour: Number.isFinite(hour) ? hour : 9,
-    minute: Number.isFinite(minute) ? minute : 0
-  };
-};
-
-const daysInMonth = (year: number, month: number) => (
-  new Date(year, month + 1, 0).getDate()
-);
-
-const clampMonthlyDay = (year: number, month: number, day?: number | null) => (
-  Math.min(Math.max(day || 1, 1), daysInMonth(year, month))
-);
-
-const computeNextRecurrenceAfter = (
-  type: NonNullable<TaskRecord['recurrence_type']>,
-  time?: string | null,
-  day?: number | null,
-  after: Date = new Date()
-) => {
-  const { hour, minute } = parseRecurrenceTime(time);
-  const base = new Date(after);
-  let next = new Date(base);
-
-  if (type === 'daily') {
-    next.setHours(hour, minute, 0, 0);
-    if (next <= base) next.setDate(next.getDate() + 1);
-    return next;
-  }
-
-  if (type === 'weekly') {
-    const targetDay = day ?? 1;
-    next.setHours(hour, minute, 0, 0);
-    let diff = targetDay - base.getDay();
-    if (diff < 0 || (diff === 0 && next <= base)) diff += 7;
-    next.setDate(next.getDate() + diff);
-    return next;
-  }
-
-  const targetDay = day ?? 1;
-  const clampedDay = clampMonthlyDay(base.getFullYear(), base.getMonth(), targetDay);
-  next = new Date(base.getFullYear(), base.getMonth(), clampedDay, hour, minute, 0, 0);
-
-  if (next <= base) {
-    const nextMonth = new Date(base.getFullYear(), base.getMonth() + 1, 1);
-    next = new Date(
-      nextMonth.getFullYear(),
-      nextMonth.getMonth(),
-      clampMonthlyDay(nextMonth.getFullYear(), nextMonth.getMonth(), targetDay),
-      hour,
-      minute,
-      0,
-      0
-    );
-  }
-
-  return next;
-};
 
 const buildRecurringTaskOccurrence = (
   template: TaskRecord,
@@ -246,7 +209,8 @@ const buildRecurringTaskOccurrence = (
     recurrence_time: null,
     recurrence_day: null,
     next_recurrence_at: null,
-    parent_task_id: template.id
+    parent_task_id: template.id,
+    recurrence_key: occurrenceAt.toISOString()
   };
 };
 
@@ -293,7 +257,8 @@ const sendSmtpMail = async (message: MailMessage) => {
       content: attachment.content,
       encoding: attachment.encoding,
       contentType: attachment.contentType
-    }))
+    })),
+    messageId: message.messageId
   });
 
   return { messageId: info.messageId };
@@ -305,7 +270,7 @@ const sendReminderEmail = async ({
   task,
   recipientId
 }: {
-  supabase: any;
+  supabase: SupabaseClient;
   appUrl: string;
   task: TaskRecord;
   recipientId?: string;
@@ -328,7 +293,8 @@ const sendReminderEmail = async ({
     .select('id, email, full_name')
     .in('id', recipientIds);
 
-  const emailableRecipients = (recipients || []).filter((recipient: any) => recipient.email);
+  const profileRecipients = (recipients || []) as Pick<ProfileRecord, 'id' | 'email' | 'full_name'>[];
+  const emailableRecipients = profileRecipients.filter(recipient => recipient.email);
   if (emailableRecipients.length === 0) {
     throw new Error('Recipients do not have email addresses.');
   }
@@ -338,7 +304,7 @@ const sendReminderEmail = async ({
     ? `Private task reminder: ${task.title}`
     : `Task reminder: ${task.title}`;
   const assignmentLabel = task.is_self_task ? 'private task' : 'assigned task';
-  const results = await Promise.allSettled(emailableRecipients.map(async (recipient: any) => {
+  const results = await Promise.allSettled(emailableRecipients.map(async recipient => {
     const recipientName = recipient.full_name || 'there';
     const text = [
       `Hello ${recipientName},`,
@@ -374,7 +340,14 @@ const sendReminderEmail = async ({
         <p>Best regards,<br />El Meraki Ops</p>
       </div>
     `;
-    const result = await sendSmtpMail({ to: [recipient.email], subject, text, html });
+    const reminderKey = task.reminder_at || task.end_date || task.created_at;
+    const result = await sendSmtpMail({
+      to: [recipient.email],
+      subject,
+      text,
+      html,
+      messageId: `<task-${task.id}-${recipient.id}-${encodeURIComponent(reminderKey)}@elmeraki.local>`
+    });
     return { email: recipient.email, messageId: result.messageId };
   }));
 
@@ -391,6 +364,32 @@ const sendReminderEmail = async ({
   return { recipients: sent.map(result => result.email), messageIds: sent.map(result => result.messageId) };
 };
 
+type StatusRecord = {
+  name: string;
+  is_completed: boolean;
+};
+
+const escapeCsv = (value: unknown) => {
+  const text = String(value ?? '');
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+};
+
+const rowsToCsv = (rows: Record<string, unknown>[]) => {
+  if (rows.length === 0) return '';
+  const headers = Object.keys(rows[0]);
+  return [
+    headers.map(escapeCsv).join(','),
+    ...rows.map(row => headers.map(header => escapeCsv(row[header])).join(','))
+  ].join('\r\n');
+};
+
+const toBase64 = (value: string) => {
+  const bytes = new TextEncoder().encode(value);
+  let binary = '';
+  bytes.forEach(byte => { binary += String.fromCharCode(byte); });
+  return btoa(binary);
+};
+
 const sendAssignmentEmails = async ({
   supabase,
   appUrl,
@@ -398,7 +397,7 @@ const sendAssignmentEmails = async ({
   assignedById,
   recipientIds
 }: {
-  supabase: any;
+  supabase: SupabaseClient;
   appUrl: string;
   task: TaskRecord;
   assignedById: string;
@@ -433,7 +432,8 @@ const sendAssignmentEmails = async ({
     throw new Error(`Unable to load assignment recipients: ${recipientsError.message}`);
   }
 
-  const emailableRecipients = (recipients || []).filter((recipient: any) => recipient.email);
+  const profileRecipients = (recipients || []) as Pick<ProfileRecord, 'id' | 'email' | 'full_name'>[];
+  const emailableRecipients = profileRecipients.filter(recipient => recipient.email);
   if (emailableRecipients.length === 0) {
     throw new Error('Assignment recipients do not have email addresses.');
   }
@@ -454,7 +454,7 @@ const sendAssignmentEmails = async ({
     `Assigned by: ${assignedByName}`
   ];
 
-  const results = await Promise.allSettled(emailableRecipients.map(async (recipient: any) => {
+  const results = await Promise.allSettled(emailableRecipients.map(async recipient => {
     const recipientName = recipient.full_name || 'there';
     const text = [
       `Hello ${recipientName},`,
@@ -512,8 +512,16 @@ const sendAssignmentEmails = async ({
   return { recipients: sent.map(result => result.email), messageIds: sent.map(result => result.messageId) };
 };
 
-const sendDeadlineDigest = async (supabase: any, appUrl: string, recipientId: string) => {
-  const [{ data: recipient, error: recipientError }, { data: tasks, error: tasksError }] = await Promise.all([
+const sendDeadlineDigest = async (
+  supabase: SupabaseClient,
+  appUrl: string,
+  recipientId: string
+) => {
+  const [
+    { data: recipient, error: recipientError },
+    { data: tasks, error: tasksError },
+    { data: completedStatuses, error: statusesError }
+  ] = await Promise.all([
     supabase
       .from('profiles')
       .select('id, email, full_name')
@@ -521,20 +529,26 @@ const sendDeadlineDigest = async (supabase: any, appUrl: string, recipientId: st
       .maybeSingle(),
     supabase
       .from('tasks')
-      .select('id, title, assignee_id, assignee_ids, status, priority, category, end_date, is_self_task')
+      .select('id, title, assignee_id, assignee_ids, status, priority, category, end_date, is_self_task, is_recurring, parent_task_id')
       .is('deleted_at', null)
       .eq('is_self_task', false)
-      .neq('status', 'Done')
       .gt('end_date', new Date().toISOString())
-      .order('end_date', { ascending: true })
+      .order('end_date', { ascending: true }),
+    supabase.from('statuses').select('name').eq('is_completed', true)
   ]);
 
   if (recipientError || !recipient?.email) {
     throw new Error('The selected employee does not have an email address.');
   }
   if (tasksError) throw new Error(`Unable to load employee deadlines: ${tasksError.message}`);
+  if (statusesError) throw new Error(`Unable to load completed statuses: ${statusesError.message}`);
 
-  const assignedTasks = (tasks || []).filter((task: TaskRecord) => getAssigneeIds(task).includes(recipientId));
+  const completedNames = new Set((completedStatuses || []).map((status: { name: string }) => status.name));
+  const assignedTasks = (tasks || []).filter((task: TaskRecord) => (
+    getAssigneeIds(task).includes(recipientId)
+    && !completedNames.has(task.status)
+    && !(task.is_recurring && !task.parent_task_id)
+  ));
   if (assignedTasks.length === 0) {
     throw new Error('The selected employee has no active tasks with future deadlines.');
   }
@@ -589,7 +603,7 @@ const sendDeadlineDigest = async (supabase: any, appUrl: string, recipientId: st
   return { recipient: recipient.email, taskCount: assignedTasks.length, messageId: result.messageId };
 };
 
-const sendReportEmail = async (supabase: any, appUrl: string) => {
+const sendReportEmail = async (supabase: SupabaseClient, appUrl: string) => {
   const [
     profilesResult,
     tasksResult,
@@ -597,8 +611,8 @@ const sendReportEmail = async (supabase: any, appUrl: string) => {
     rolesResult
   ] = await Promise.all([
     supabase.from('profiles').select('id, email, full_name, department, job_title'),
-    supabase.from('tasks').select('id, title, assignee_id, assignee_ids, creator_id, status, priority, category, end_date, is_self_task').is('deleted_at', null),
-    supabase.from('statuses').select('name, sort_order'),
+    supabase.from('tasks').select('id, title, assignee_id, assignee_ids, creator_id, status, priority, category, end_date, is_self_task, is_recurring, parent_task_id').is('deleted_at', null),
+    supabase.from('statuses').select('name, is_completed'),
     supabase.from('user_roles').select('user_id, role')
   ]);
 
@@ -614,8 +628,10 @@ const sendReportEmail = async (supabase: any, appUrl: string) => {
   }
 
   const profiles = (profilesResult.data || []) as ProfileRecord[];
-  const tasks = ((tasksResult.data || []) as any[]).filter(task => !task.is_self_task);
-  const statuses = statusesResult.data || [];
+  const tasks = ((tasksResult.data || []) as TaskRecord[]).filter(task => (
+    !task.is_self_task && !(task.is_recurring && !task.parent_task_id)
+  ));
+  const statuses = (statusesResult.data || []) as StatusRecord[];
   const roles = (rolesResult.data || []) as UserRoleRecord[];
 
   if (!profiles.length) throw new Error('No profiles found.');
@@ -625,21 +641,12 @@ const sendReportEmail = async (supabase: any, appUrl: string) => {
   const adminProfiles = profiles.filter(profile => adminIds.has(profile.id) && profile.email);
   if (adminProfiles.length === 0) throw new Error('No admin email addresses found.');
 
-  const maxSort = statuses.length > 0 ? Math.max(...statuses.map((s: any) => s.sort_order || 0)) : 0;
-  const isCompleted = (task: any) => {
-    if (statuses.length === 0) {
-      return ['done', 'completed'].includes(String(task.status || '').toLowerCase());
-    }
-
-    const status = statuses.find((s: any) => s.name === task.status);
-    return !!status && (status.sort_order || 0) === maxSort;
-  };
-  const getAssigneeIds = (task: any) => (
-    task.assignee_ids?.length ? task.assignee_ids : (task.assignee_id ? [task.assignee_id] : [])
+  const isCompleted = (task: TaskRecord) => (
+    statuses.some(status => status.name === task.status && status.is_completed)
   );
 
   const summaryRows = profiles.map((profile) => {
-    const assigned = tasks.filter((task: any) => getAssigneeIds(task).includes(profile.id));
+    const assigned = tasks.filter(task => getAssigneeIds(task).includes(profile.id));
     const completed = assigned.filter(isCompleted);
     const pct = assigned.length > 0 ? Math.round((completed.length / assigned.length) * 100) : 0;
     return {
@@ -655,8 +662,8 @@ const sendReportEmail = async (supabase: any, appUrl: string) => {
   });
 
   const taskRows = profiles.flatMap((profile) => {
-    const assigned = tasks.filter((task: any) => getAssigneeIds(task).includes(profile.id));
-    return assigned.map((task: any) => ({
+    const assigned = tasks.filter(task => getAssigneeIds(task).includes(profile.id));
+    return assigned.map(task => ({
       'Employee': profile.full_name || profile.email || 'Unknown',
       'Email': profile.email || '-',
       'Role': roleByUserId.get(profile.id) || 'Worker',
@@ -669,16 +676,8 @@ const sendReportEmail = async (supabase: any, appUrl: string) => {
     }));
   });
 
-  const wb = XLSX.utils.book_new();
-  const summarySheet = XLSX.utils.json_to_sheet(summaryRows);
-  summarySheet['!cols'] = Object.keys(summaryRows[0] || {}).map(key => ({ wch: Math.max(key.length, 20) }));
-  XLSX.utils.book_append_sheet(wb, summarySheet, 'Employee Summary');
-
-  const taskSheet = XLSX.utils.json_to_sheet(taskRows);
-  taskSheet['!cols'] = Object.keys(taskRows[0] || {}).map(key => ({ wch: Math.max(key.length, 25) }));
-  XLSX.utils.book_append_sheet(wb, taskSheet, 'Task Details');
-
-  const base64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
+  const csv = [rowsToCsv(summaryRows), '', rowsToCsv(taskRows)].join('\r\n');
+  const base64 = toBase64(`\uFEFF${csv}`);
 
   const now = new Date().toISOString().slice(0, 10);
   const adminEmails = [
@@ -698,10 +697,10 @@ const sendReportEmail = async (supabase: any, appUrl: string) => {
         <p>Best regards,<br />El Meraki Ops</p>
       </div>`,
       attachments: [{
-        filename: `employee_summary_${now}.xlsx`,
+        filename: `employee_summary_${now}.csv`,
         content: base64,
         encoding: 'base64',
-        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        contentType: 'text/csv; charset=utf-8'
       }]
     })));
 
@@ -711,35 +710,24 @@ const sendReportEmail = async (supabase: any, appUrl: string) => {
   try {
     const results = await sendToAdmins(adminEmails);
     return { recipientCount: adminEmails.length, messageIds: results.map(result => result.messageId) };
-  } catch (error: any) {
-    const providerMessage = error.message || 'Unknown';
+  } catch (error: unknown) {
+    const providerMessage = asError(error).message || 'Unknown';
     throw new Error(`Mail provider rejected the report: ${providerMessage}`);
   }
 };
 
-const processDueRecurringTasks = async (supabase: any, appUrl: string) => {
+const processDueRecurringTasks = async (supabase: SupabaseClient) => {
   const { data: defaultStatusRow } = await supabase
     .from('statuses')
     .select('name')
+    .eq('is_completed', false)
     .order('sort_order', { ascending: true })
     .limit(1)
     .maybeSingle();
   const defaultStatus = defaultStatusRow?.name || 'To Do';
 
   const { data: dueTemplates, error: templatesError } = await supabase
-    .from('tasks')
-    .select(
-      'id, title, description, assignee_id, assignee_ids, creator_id, status, priority, category, ' +
-      'observers, is_self_task, start_date, end_date, reminder_at, reminder_sent_at, is_recurring, ' +
-      'recurrence_type, recurrence_time, recurrence_day, next_recurrence_at, parent_task_id'
-    )
-    .eq('is_recurring', true)
-    .is('parent_task_id', null)
-    .is('deleted_at', null)
-    .not('next_recurrence_at', 'is', null)
-    .lte('next_recurrence_at', new Date().toISOString())
-    .order('next_recurrence_at', { ascending: true })
-    .limit(50);
+    .rpc('claim_due_recurring_tasks', { batch_size: 50 });
 
   if (templatesError) {
     throw new Error(`Unable to load due recurring tasks: ${templatesError.message}`);
@@ -757,41 +745,39 @@ const processDueRecurringTasks = async (supabase: any, appUrl: string) => {
         throw new Error('Template has an invalid next recurrence date.');
       }
 
-      const nextRecurrence = computeNextRecurrenceAfter(
-        template.recurrence_type,
-        template.recurrence_time,
-        template.recurrence_type === 'daily' ? null : template.recurrence_day,
-        new Date()
-      ).toISOString();
-
-      const { data: claimedTemplate, error: claimError } = await supabase
-        .from('tasks')
-        .update({ next_recurrence_at: nextRecurrence })
-        .eq('id', template.id)
-        .eq('next_recurrence_at', template.next_recurrence_at)
-        .select('id')
-        .maybeSingle();
-
-      if (claimError) throw claimError;
-      if (!claimedTemplate) continue;
+      const { data: nextRecurrence, error: recurrenceError } = await supabase
+        .rpc('compute_next_task_recurrence', {
+          recurrence_type: template.recurrence_type,
+          recurrence_time: template.recurrence_time || '09:00',
+          recurrence_day: template.recurrence_type === 'daily' ? null : template.recurrence_day,
+          recurrence_timezone: template.recurrence_timezone || 'Africa/Cairo',
+          after: template.next_recurrence_at
+        });
+      if (recurrenceError || !nextRecurrence) {
+        throw recurrenceError || new Error('Could not calculate the following recurrence.');
+      }
 
       const occurrence = buildRecurringTaskOccurrence(template, occurrenceAt, defaultStatus);
       const { error: insertError } = await supabase
         .from('tasks')
         .insert([occurrence]);
 
-      if (insertError) {
-        await supabase
-          .from('tasks')
-          .update({ next_recurrence_at: template.next_recurrence_at })
-          .eq('id', template.id);
+      if (insertError && insertError.code !== '23505') {
         throw insertError;
       }
 
+      const { error: completeError } = await supabase.rpc('complete_recurring_task_claim', {
+        template_id: template.id,
+        claimed_occurrence_at: template.next_recurrence_at,
+        following_recurrence_at: nextRecurrence
+      });
+      if (completeError) throw completeError;
+
       created += 1;
 
-    } catch (error: any) {
-      failures.push({ task_id: template.id, error: error.message || 'Unknown error' });
+    } catch (error: unknown) {
+      await supabase.rpc('release_recurring_task_claim', { template_id: template.id });
+      failures.push({ task_id: template.id, error: asError(error).message || 'Unknown error' });
     }
   }
 
@@ -869,8 +855,8 @@ Deno.serve(async (req) => {
         recipients: result.recipients,
         message_ids: result.messageIds
       });
-    } catch (error: any) {
-      return jsonResponse({ error: error.message || 'Unable to send assignment email.' }, 502);
+    } catch (error: unknown) {
+      return jsonResponse({ error: asError(error).message || 'Unable to send assignment email.' }, 502);
     }
   }
 
@@ -880,9 +866,9 @@ Deno.serve(async (req) => {
     }
 
     try {
-      return jsonResponse(await processDueRecurringTasks(supabase, appUrl));
-    } catch (error: any) {
-      return jsonResponse({ error: error.message || 'Unable to process recurring tasks.' }, 500);
+      return jsonResponse(await processDueRecurringTasks(supabase));
+    } catch (error: unknown) {
+      return jsonResponse({ error: asError(error).message || 'Unable to process recurring tasks.' }, 500);
     }
   }
 
@@ -921,7 +907,7 @@ Deno.serve(async (req) => {
         }
 
         sent += 1;
-      } catch (error: any) {
+      } catch (error: unknown) {
         const { error: releaseError } = await supabase
           .from('tasks')
           .update({ reminder_claimed_at: null })
@@ -929,7 +915,7 @@ Deno.serve(async (req) => {
         failures.push({
           task_id: task.id,
           error: [
-            error.message || 'Unknown error',
+            asError(error).message || 'Unknown error',
             releaseError ? `Claim release failed: ${releaseError.message}` : null
           ].filter(Boolean).join('; ')
         });
@@ -966,9 +952,18 @@ Deno.serve(async (req) => {
     for (const schedule of dueSchedules) {
       try {
         await sendReportEmail(supabase, appUrl);
+        const { error: completeError } = await supabase.rpc('complete_report_schedule_claim', {
+          schedule_id: schedule.id,
+          delivery_succeeded: true
+        });
+        if (completeError) throw completeError;
         sent += 1;
-      } catch (error: any) {
-        failures.push({ schedule_id: schedule.id, error: error.message || 'Unknown error' });
+      } catch (error: unknown) {
+        await supabase.rpc('complete_report_schedule_claim', {
+          schedule_id: schedule.id,
+          delivery_succeeded: false
+        });
+        failures.push({ schedule_id: schedule.id, error: asError(error).message || 'Unknown error' });
       }
     }
 
@@ -996,12 +991,21 @@ Deno.serve(async (req) => {
     if (requesterRole?.role !== 'Admin') return jsonResponse({ error: 'Only admins can send reports.' }, 403);
 
     try {
+      if (!await consumeRateLimit(supabase, authUser.user.id, 'send-report', 5)) {
+        return jsonResponse({ error: 'Report sending limit reached. Try again later.' }, 429);
+      }
+    } catch (error: unknown) {
+      return jsonResponse({ error: asError(error).message }, 503);
+    }
+
+    try {
       const result = await sendReportEmail(supabase, appUrl);
       return jsonResponse({ success: true, ...result });
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const details = asError(error);
       return jsonResponse({
-        error: error.message || 'Unable to send report.',
-        details: { name: error.name || 'Error' }
+        error: details.message || 'Unable to send report.',
+        details: { name: details.name || 'Error' }
       }, 502);
     }
   }
@@ -1023,10 +1027,18 @@ Deno.serve(async (req) => {
     }
 
     try {
+      if (!await consumeRateLimit(supabase, authUser.user.id, 'deadline-digest', 20)) {
+        return jsonResponse({ error: 'Deadline digest limit reached. Try again later.' }, 429);
+      }
+    } catch (error: unknown) {
+      return jsonResponse({ error: asError(error).message }, 503);
+    }
+
+    try {
       const result = await sendDeadlineDigest(supabase, appUrl, payload.deadline_digest_recipient_id);
       return jsonResponse({ success: true, ...result });
-    } catch (error: any) {
-      return jsonResponse({ error: error.message || 'Unable to send deadline digest.' }, 502);
+    } catch (error: unknown) {
+      return jsonResponse({ error: asError(error).message || 'Unable to send deadline digest.' }, 502);
     }
   }
 
@@ -1077,6 +1089,15 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: 'Only an admin or the task creator can send assignment emails.' }, 403);
   }
 
+  try {
+    const action = payload.notification_type === 'assignment' ? 'manual-assignment' : 'manual-reminder';
+    if (!await consumeRateLimit(supabase, authUser.user.id, action, 30)) {
+      return jsonResponse({ error: 'Email sending limit reached. Try again later.' }, 429);
+    }
+  } catch (error: unknown) {
+    return jsonResponse({ error: asError(error).message }, 503);
+  }
+
   const isFreshRecurringOccurrence = Boolean(
     task.parent_task_id &&
     !task.reminder_at &&
@@ -1124,7 +1145,7 @@ Deno.serve(async (req) => {
       recipients: result.recipients,
       message_ids: result.messageIds
     });
-  } catch (error: any) {
-    return jsonResponse({ error: error.message || 'Unable to send reminder email.' }, 502);
+  } catch (error: unknown) {
+    return jsonResponse({ error: asError(error).message || 'Unable to send reminder email.' }, 502);
   }
 });

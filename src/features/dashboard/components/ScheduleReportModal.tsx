@@ -3,6 +3,7 @@ import { useStore } from '../../../store/useStore';
 import { CalendarClock, Clock, Mail, Send, Trash2 } from 'lucide-react';
 import { AppDateTimePicker } from '../../../components/Shared/AppDateTimePicker';
 import { AppSelect } from '../../../components/Shared/AppSelect';
+import { ConfirmationModal } from '../../../components/Shared/ConfirmationModal';
 
 export const ScheduleReportModal: React.FC<{
   open: boolean;
@@ -21,6 +22,7 @@ export const ScheduleReportModal: React.FC<{
   const [dayOfMonth, setDayOfMonth] = React.useState(1);
   const [saving, setSaving] = React.useState(false);
   const [sending, setSending] = React.useState(false);
+  const [scheduleToDelete, setScheduleToDelete] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (open) {
@@ -58,7 +60,8 @@ export const ScheduleReportModal: React.FC<{
       schedule_type: scheduleType,
       time_of_day: time,
       day_of_week: scheduleType === 'weekly' ? dayOfWeek : undefined,
-      day_of_month: scheduleType === 'monthly' ? dayOfMonth : undefined
+      day_of_month: scheduleType === 'monthly' ? dayOfMonth : undefined,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Cairo'
     });
     setSaving(false);
     if (saved) {
@@ -159,7 +162,7 @@ export const ScheduleReportModal: React.FC<{
                 <div>
                   <span style={{ fontWeight: 600, textTransform: 'capitalize' }}>{rs.schedule_type}</span>
                   <span style={{ color: 'var(--text-4)', marginLeft: '0.5rem' }}>
-                    at {rs.time_of_day.slice(0, 5)}
+                    at {rs.time_of_day.slice(0, 5)} ({rs.timezone})
                     {rs.schedule_type === 'weekly' && ` on ${dayNames[rs.day_of_week ?? 0]}`}
                     {rs.schedule_type === 'monthly' && ` on day ${rs.day_of_month}`}
                   </span>
@@ -169,7 +172,7 @@ export const ScheduleReportModal: React.FC<{
                   </div>
                 </div>
                 <button
-                  onClick={() => deleteReportSchedule(rs.id)}
+                  onClick={() => setScheduleToDelete(rs.id)}
                   style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-4)', padding: '0.25rem' }}
                   title="Delete schedule"
                 >
@@ -180,6 +183,18 @@ export const ScheduleReportModal: React.FC<{
           </div>
         )}
       </div>
+      <ConfirmationModal
+        isOpen={Boolean(scheduleToDelete)}
+        onClose={() => setScheduleToDelete(null)}
+        onConfirm={async () => {
+          if (!scheduleToDelete) return false;
+          return deleteReportSchedule(scheduleToDelete);
+        }}
+        title="Delete report schedule"
+        message="This recurring report schedule will be permanently removed."
+        confirmText="Delete schedule"
+        type="danger"
+      />
     </div>
   );
 };

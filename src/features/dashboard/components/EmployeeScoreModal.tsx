@@ -1,12 +1,13 @@
 import React from 'react';
-import { getTaskAssigneeIds } from '../../../lib/supabase';
+import { getTaskAssigneeIds, isTaskComplete } from '../../../lib/supabase';
+import type { Profile, Task } from '../../../lib/supabase';
 import { useStore } from '../../../store/useStore';
 import { formatDateTime } from '../../../lib/format';
 
 export const EmployeeScoreModal: React.FC<{
   open: boolean;
   onClose: () => void;
-  profile: any | null;
+  profile: Profile | null;
 }> = ({ open, onClose, profile }) => {
   const tasks = useStore(s => s.tasks);
   const statuses = useStore(s => s.statuses);
@@ -14,12 +15,7 @@ export const EmployeeScoreModal: React.FC<{
   if (!open || !profile) return null;
 
   const assigned = tasks.filter(t => getTaskAssigneeIds(t).includes(profile.id));
-  const maxSort = statuses.length > 0 ? Math.max(...statuses.map(s => s.sort_order || 0)) : 0;
-
-  const isCompleted = (task: any) => {
-    const st = statuses.find(s => s.name === task.status);
-    return !!st && (st.sort_order || 0) === maxSort;
-  };
+  const isCompleted = (task: Task) => isTaskComplete(task, statuses);
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60 }}>
@@ -50,11 +46,11 @@ export const EmployeeScoreModal: React.FC<{
             <div style={{ padding: '1rem', color: 'var(--text-4)' }}>No tasks assigned.</div>
           )}
 
-          {assigned.map((t: any) => (
+          {assigned.map(t => (
             <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.6rem 0', borderBottom: '1px solid var(--border-subtle)' }}>
               <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: isCompleted(t) ? 'var(--primary)' : 'var(--surface-3)' }} />
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600 }}>{t.title || t.name || 'Untitled task'}</div>
+                <div style={{ fontWeight: 600 }}>{t.title || 'Untitled task'}</div>
                 <div style={{ fontSize: '0.8rem', color: 'var(--text-4)' }}>{t.status || 'No status'}</div>
               </div>
               <div style={{ textAlign: 'right', flexShrink: 0 }}>

@@ -1,21 +1,40 @@
-import { useState, useEffect } from 'react';
+import { lazy, Suspense, useState, useEffect } from 'react';
 import { Sidebar } from './components/Layout/Sidebar';
-import { TaskBoard } from './features/tasks/components/TaskBoard';
-import { CreateTaskModal } from './features/tasks/components/CreateTaskModal';
-import { TaskDetailModal } from './features/tasks/components/TaskDetailModal';
-import { DashboardAnalytics } from './features/dashboard/components/DashboardAnalytics';
-import { MyTasksView } from './features/tasks/components/MyTasksView';
-import { RecurringTasksView } from './features/tasks/components/RecurringTasksView';
-import { ProfileSettings } from './features/profile/components/ProfileSettings';
 import { Auth } from './features/auth/components/Auth';
-import { AdminSettings } from './features/admin/components/AdminSettings';
-import { CompleteProfileModal } from './features/auth/components/CompleteProfileModal';
-import { RemindersView } from './features/reminders/components/RemindersView';
-import { ArchiveView } from './features/tasks/components/ArchiveView';
-import { TicketsView } from './features/tickets/components/TicketsView';
 import { useStore } from './store/useStore';
 import { Menu } from 'lucide-react';
 import './index.css';
+
+const TaskBoard = lazy(() => import('./features/tasks/components/TaskBoard')
+  .then(module => ({ default: module.TaskBoard })));
+const CreateTaskModal = lazy(() => import('./features/tasks/components/CreateTaskModal')
+  .then(module => ({ default: module.CreateTaskModal })));
+const TaskDetailModal = lazy(() => import('./features/tasks/components/TaskDetailModal')
+  .then(module => ({ default: module.TaskDetailModal })));
+const DashboardAnalytics = lazy(() => import('./features/dashboard/components/DashboardAnalytics')
+  .then(module => ({ default: module.DashboardAnalytics })));
+const MyTasksView = lazy(() => import('./features/tasks/components/MyTasksView')
+  .then(module => ({ default: module.MyTasksView })));
+const RecurringTasksView = lazy(() => import('./features/tasks/components/RecurringTasksView')
+  .then(module => ({ default: module.RecurringTasksView })));
+const ProfileSettings = lazy(() => import('./features/profile/components/ProfileSettings')
+  .then(module => ({ default: module.ProfileSettings })));
+const AdminSettings = lazy(() => import('./features/admin/components/AdminSettings')
+  .then(module => ({ default: module.AdminSettings })));
+const CompleteProfileModal = lazy(() => import('./features/auth/components/CompleteProfileModal')
+  .then(module => ({ default: module.CompleteProfileModal })));
+const RemindersView = lazy(() => import('./features/reminders/components/RemindersView')
+  .then(module => ({ default: module.RemindersView })));
+const ArchiveView = lazy(() => import('./features/tasks/components/ArchiveView')
+  .then(module => ({ default: module.ArchiveView })));
+const TicketsView = lazy(() => import('./features/tickets/components/TicketsView')
+  .then(module => ({ default: module.TicketsView })));
+
+const ScreenFallback = () => (
+  <div style={{ minHeight: '40vh', display: 'grid', placeItems: 'center' }}>
+    <div className="spinner" aria-label="Loading screen" />
+  </div>
+);
 
 function App() {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -23,7 +42,7 @@ function App() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const currentUser = useStore(s => s.currentUser);
   const initialize = useStore(s => s.initialize);
-  const checkTaskDeadlines = useStore(s => s.checkTaskDeadlines);
+  const dispose = useStore(s => s.dispose);
   const viewMode = useStore(s => s.viewMode);
   const setViewMode = useStore(s => s.setViewMode);
   const isCheckingSession = useStore(s => s.isCheckingSession);
@@ -32,24 +51,15 @@ function App() {
   // Realtime subscriptions handle data sync, so we no longer need the aggressive 
   // hard reload on focus which was causing issues with date pickers and modals.
   useEffect(() => {
-    initialize();
-    
-    // Initial check
-    checkTaskDeadlines();
-    
-    // Check every minute
-    const interval = setInterval(() => {
-      checkTaskDeadlines();
-    }, 60000);
-    
-    return () => clearInterval(interval);
-  }, [initialize, checkTaskDeadlines]);
+    void initialize();
+    return dispose;
+  }, [initialize, dispose]);
 
   useEffect(() => {
     if (
       currentUser &&
       currentUser.role !== 'Admin' &&
-      (viewMode === 'recurring' || viewMode === 'archive')
+      viewMode === 'recurring'
     ) {
       setViewMode('dashboard');
     }
@@ -105,41 +115,43 @@ function App() {
           </button>
         </div>
 
-        {viewMode === 'settings' ? (
-          <AdminSettings />
-        ) : viewMode === 'archive' && currentUser.role === 'Admin' ? (
-          <ArchiveView />
-        ) : viewMode === 'tickets' ? (
-          <TicketsView />
-        ) : viewMode === 'dashboard' ? (
-          <DashboardAnalytics onOpenCreateModal={() => setIsCreateModalOpen(true)} />
-        ) : viewMode === 'my-tasks' ? (
-          <MyTasksView onSelectTask={setSelectedTaskId} />
-        ) : viewMode === 'recurring' && currentUser.role === 'Admin' ? (
-          <RecurringTasksView onSelectTask={setSelectedTaskId} />
-        ) : viewMode === 'profile' ? (
-          <ProfileSettings />
-        ) : viewMode === 'reminders' ? (
-          <RemindersView onSelectTask={setSelectedTaskId} onOpenCreateModal={() => setIsCreateModalOpen(true)} />
-        ) : (
-          <TaskBoard onSelectTask={setSelectedTaskId} onOpenCreateModal={() => setIsCreateModalOpen(true)} />
-        )}
+        <Suspense fallback={<ScreenFallback />}>
+          {viewMode === 'settings' ? (
+            <AdminSettings />
+          ) : viewMode === 'archive' ? (
+            <ArchiveView />
+          ) : viewMode === 'tickets' ? (
+            <TicketsView />
+          ) : viewMode === 'dashboard' ? (
+            <DashboardAnalytics onOpenCreateModal={() => setIsCreateModalOpen(true)} />
+          ) : viewMode === 'my-tasks' ? (
+            <MyTasksView onSelectTask={setSelectedTaskId} />
+          ) : viewMode === 'recurring' && currentUser.role === 'Admin' ? (
+            <RecurringTasksView onSelectTask={setSelectedTaskId} />
+          ) : viewMode === 'profile' ? (
+            <ProfileSettings />
+          ) : viewMode === 'reminders' ? (
+            <RemindersView onSelectTask={setSelectedTaskId} onOpenCreateModal={() => setIsCreateModalOpen(true)} />
+          ) : (
+            <TaskBoard onSelectTask={setSelectedTaskId} onOpenCreateModal={() => setIsCreateModalOpen(true)} />
+          )}
+        </Suspense>
       </main>
       
-      {isCreateModalOpen && (
-        <CreateTaskModal onClose={() => setIsCreateModalOpen(false)} />
-      )}
-      
-      {selectedTaskId && (
-        <TaskDetailModal 
-          taskId={selectedTaskId} 
-          onClose={() => setSelectedTaskId(null)} 
-        />
-      )}
+      <Suspense fallback={null}>
+        {isCreateModalOpen && (
+          <CreateTaskModal onClose={() => setIsCreateModalOpen(false)} />
+        )}
 
-      {isInvitedSession && (
-        <CompleteProfileModal />
-      )}
+        {selectedTaskId && (
+          <TaskDetailModal
+            taskId={selectedTaskId}
+            onClose={() => setSelectedTaskId(null)}
+          />
+        )}
+
+        {isInvitedSession && <CompleteProfileModal />}
+      </Suspense>
 
       <ToastNotification />
     </div>

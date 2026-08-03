@@ -31,9 +31,9 @@ const parseValue = (value: string) => {
   return date;
 };
 
-const toDateTimeValue = (date: Date) => (
-  `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
-);
+// Persist an absolute instant. Sending a timezone-less local string to a
+// timestamptz column makes Postgres interpret Cairo time as UTC.
+const toDateTimeValue = (date: Date) => date.toISOString();
 
 const toTimeValue = (date: Date) => `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 
@@ -123,15 +123,6 @@ export const AppDateTimePicker: React.FC<AppDateTimePickerProps> = ({
   useEffect(() => {
     if (!isOpen) return;
 
-    const latest = parseValue(value) || new Date();
-    setDraft(latest);
-    setViewDate(latest);
-  }, [isOpen, value]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    updatePopoverPosition();
     const frame = window.requestAnimationFrame(updatePopoverPosition);
 
     window.addEventListener('resize', updatePopoverPosition);
@@ -262,6 +253,15 @@ export const AppDateTimePicker: React.FC<AppDateTimePickerProps> = ({
 
   const label = displayLabel(value, includeDate, includeTime, resolvedPlaceholder);
 
+  const toggleOpen = () => {
+    if (!isOpen) {
+      const latest = parseValue(value) || new Date();
+      setDraft(latest);
+      setViewDate(latest);
+    }
+    setIsOpen(open => !open);
+  };
+
   return (
     <div
       ref={rootRef}
@@ -272,7 +272,7 @@ export const AppDateTimePicker: React.FC<AppDateTimePickerProps> = ({
         type="button"
         className={`app-date-trigger ${value ? '' : 'is-placeholder'}`}
         disabled={disabled}
-        onClick={() => setIsOpen(open => !open)}
+        onClick={toggleOpen}
       >
         {includeDate ? <Calendar size={14} /> : <Clock size={14} />}
         <span>{label}</span>

@@ -1,9 +1,10 @@
 import React from 'react';
-import { getTaskAssigneeIds, isTaskAssignee, type Task } from '../../../lib/supabase';
+import { getTaskAssigneeIds, isTaskAssignee, isTaskComplete, type Task } from '../../../lib/supabase';
 import { useStore } from '../../../store/useStore';
 import { Calendar, Eye, GripVertical, Lock, AlertTriangle, AlertCircle, Repeat } from 'lucide-react';
 import { formatDateTime } from '../../../lib/format';
 import { AppSelect } from '../../../components/Shared/AppSelect';
+import { useCurrentTime } from '../../../lib/useCurrentTime';
 
 export const TaskCard: React.FC<{ task: Task, onClick: () => void }> = ({ task, onClick }) => {
   const currentUser = useStore(s => s.currentUser);
@@ -11,6 +12,7 @@ export const TaskCard: React.FC<{ task: Task, onClick: () => void }> = ({ task, 
   const profiles = useStore(s => s.profiles);
   const statuses = useStore(s => s.statuses);
   const categories = useStore(s => s.categories);
+  const currentTime = useCurrentTime();
   
   const assignees = profiles.filter(profile => getTaskAssigneeIds(task).includes(profile.id));
   
@@ -35,21 +37,21 @@ export const TaskCard: React.FC<{ task: Task, onClick: () => void }> = ({ task, 
   const isHighPriority = task.priority === 'High';
 
   const isOverdue = React.useMemo(() => {
-    if (!task.end_date || task.status === 'Done') return false;
-    return new Date(task.end_date).getTime() < Date.now();
-  }, [task.end_date, task.status]);
+    if (!task.end_date || isTaskComplete(task, statuses)) return false;
+    return new Date(task.end_date).getTime() < currentTime;
+  }, [task, statuses, currentTime]);
 
   const isUrgent = React.useMemo(() => {
-    if (!task.end_date || task.status === 'Done' || isOverdue) return false;
-    const diff = new Date(task.end_date).getTime() - Date.now();
+    if (!task.end_date || isTaskComplete(task, statuses) || isOverdue) return false;
+    const diff = new Date(task.end_date).getTime() - currentTime;
     return diff < (1000 * 60 * 60); // 1 hour
-  }, [task.end_date, task.status, isOverdue]);
+  }, [task, statuses, isOverdue, currentTime]);
 
   const isWarning = React.useMemo(() => {
-    if (!task.end_date || task.status === 'Done' || isUrgent || isOverdue) return false;
-    const diff = new Date(task.end_date).getTime() - Date.now();
+    if (!task.end_date || isTaskComplete(task, statuses) || isUrgent || isOverdue) return false;
+    const diff = new Date(task.end_date).getTime() - currentTime;
     return diff < (1000 * 60 * 60 * 24); // 24 hours
-  }, [task.end_date, task.status, isUrgent, isOverdue]);
+  }, [task, statuses, isUrgent, isOverdue, currentTime]);
 
   const handleDragStart = (e: React.DragEvent) => {
     if (isLocked) {

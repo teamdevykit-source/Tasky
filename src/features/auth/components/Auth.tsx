@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { useStore } from '../../../store/useStore';
-import { Mail, User, ArrowRight, ShieldCheck, Zap, Globe, Sun, Moon, Eye, EyeOff } from 'lucide-react';
+import { Mail, ArrowRight, ShieldCheck, Zap, Globe, Sun, Moon, Eye, EyeOff } from 'lucide-react';
 
 export const Auth = () => {
   const theme = useStore(s => s.theme);
@@ -14,11 +14,6 @@ export const Auth = () => {
     return params.get('email') || '';
   });
   const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState('');
-  const [isLogin, setIsLogin] = useState(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('type') !== 'signup';
-  });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,38 +23,14 @@ export const Auth = () => {
     setError(null);
 
     try {
-      if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        // Force refresh to clear any lingering auth state and land on dashboard
-        window.location.assign('/'); 
-      } else {
-        const { data, error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: {
-              full_name: fullName || email.split('@')[0]
-            },
-            emailRedirectTo: window.location.origin,
-          }
-        });
-        if (error) throw error;
-        
-        // Supabase returns data.user with empty identities if user already exists
-        if (data.user && (!data.user.identities || data.user.identities.length === 0)) {
-          throw new Error('This email is already registered. Please log in instead.');
-        }
-
-        useStore.getState().setAlertData({ 
-          message: 'Registration successful! Please check your email or log in.', 
-          type: 'success' 
-        });
-        setIsLogin(true);
-      }
-    } catch (err: any) {
-      console.error("Auth error:", err);
-      let msg = err.message || 'Authentication failed. Please check your connection.';
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError) throw signInError;
+      window.location.assign('/');
+    } catch (error: unknown) {
+      console.error('Auth error:', error);
+      let msg = error instanceof Error
+        ? error.message
+        : 'Authentication failed. Please check your connection.';
       if (msg.toLowerCase().includes('already registered')) {
         msg = 'This email is already registered. Please log in instead.';
       }
@@ -126,35 +97,14 @@ export const Auth = () => {
         <div className="auth-card">
           <div className="auth-card-header">
             <div className="auth-logo">M</div>
-            <h2 className="auth-title">{isLogin ? 'Welcome Back' : 'Create Account'}</h2>
-            <p className="auth-subtitle">
-              {isLogin
-                ? 'Access your mission-critical dashboard'
-                : 'Join the next generation of task management'}
-            </p>
+            <h2 className="auth-title">Welcome Back</h2>
+            <p className="auth-subtitle">Sign in with the account provided by your administrator.</p>
           </div>
 
           <form onSubmit={handleAuth} className="auth-form">
             {error && (
               <div className="auth-error animate-shake">
                 {error}
-              </div>
-            )}
-
-            {!isLogin && (
-              <div className="form-group-modern">
-                <label className="form-label-modern">Full Name</label>
-                <div className="input-with-icon">
-                  <input
-                    type="text"
-                    className="input-modern"
-                    placeholder="E.g. Alexander Hamilton"
-                    value={fullName}
-                    onChange={e => setFullName(e.target.value)}
-                    required={!isLogin}
-                  />
-                  <User className="input-icon" size={18} />
-                </div>
               </div>
             )}
 
@@ -201,23 +151,14 @@ export const Auth = () => {
                 <span className="spinner"></span>
               ) : (
                 <>
-                  {isLogin ? 'Sign In' : 'Create Account'}
+                  Sign In
                   <ArrowRight size={18} />
                 </>
               )}
             </button>
           </form>
 
-          <div className="auth-toggle">
-            <span>{isLogin ? "Don't have an account?" : "Already registered?"}</span>
-            <button
-              type="button"
-              className="auth-toggle-btn"
-              onClick={() => setIsLogin(!isLogin)}
-            >
-              {isLogin ? "Create one" : "Sign in"}
-            </button>
-          </div>
+          <div className="auth-toggle">Need access? Contact a workspace administrator.</div>
         </div>
       </div>
 

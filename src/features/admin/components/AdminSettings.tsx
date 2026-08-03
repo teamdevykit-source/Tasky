@@ -1,15 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useStore } from '../../../store/useStore';
-import { isTaskAssignee } from '../../../lib/supabase';
+import { isTaskAssignee, isTaskComplete, type UserRole } from '../../../lib/supabase';
+import { useCurrentTime } from '../../../lib/useCurrentTime';
 import { Plus, Trash2, Settings, Users, Layers, Tag, ShieldCheck, Mail, Send, Building2, Eye, Lock, KeyRound } from 'lucide-react';
 import { ConfirmationModal } from '../../../components/Shared/ConfirmationModal';
 import { AppSelect } from '../../../components/Shared/AppSelect';
 
 export const AdminSettings: React.FC = () => {
-  const temporaryPassword = 'ElMeraki@2026';
   const currentUser = useStore(s => s.currentUser);
   const profiles = useStore(s => s.profiles);
   const tasks = useStore(s => s.tasks);
+  const currentTime = useCurrentTime();
   const departments = useStore(s => s.departments);
   const updateUserRole = useStore(s => s.updateUserRole);
   const updateUserJobTitle = useStore(s => s.updateUserJobTitle);
@@ -22,6 +23,7 @@ export const AdminSettings: React.FC = () => {
   const deleteCategory = useStore(s => s.deleteCategory);
   const statuses = useStore(s => s.statuses);
   const addStatus = useStore(s => s.addStatus);
+  const setCompletedStatus = useStore(s => s.setCompletedStatus);
   const deleteStatus = useStore(s => s.deleteStatus);
   const inviteUser = useStore(s => s.inviteUser);
   const resetUserPassword = useStore(s => s.resetUserPassword);
@@ -132,13 +134,12 @@ export const AdminSettings: React.FC = () => {
   };
 
   const getRemindableTaskCount = (userId: string) => {
-    const now = Date.now();
     return tasks.filter(task => (
       isTaskAssignee(task, userId) &&
-      task.status !== 'Done' &&
+      !isTaskComplete(task, statuses) &&
       !task.is_self_task &&
       !!task.end_date &&
-      new Date(task.end_date).getTime() > now
+      new Date(task.end_date).getTime() > currentTime
     )).length;
   };
 
@@ -221,7 +222,7 @@ export const AdminSettings: React.FC = () => {
                   style={{ width: '100%' }}
                 />
                 <div style={{ marginTop: '0.45rem', color: 'var(--text-4)', fontSize: '0.72rem' }}>
-                  Temporary password: <strong style={{ color: 'var(--text-2)' }}>{temporaryPassword}</strong>.
+                  A unique temporary password is generated for each invitation and sent by email.
                   The member must replace it after signing in.
                 </div>
               </div>
@@ -297,7 +298,7 @@ export const AdminSettings: React.FC = () => {
                     <td>
                       <AppSelect
                         value={user.role}
-                        onChange={(value) => updateUserRole(user.id, value as any)}
+                        onChange={(value) => updateUserRole(user.id, value as UserRole)}
                         disabled={user.id === currentUser.id}
                         options={ROLES.map(role => ({ value: role, label: role }))}
                         style={{
@@ -351,7 +352,7 @@ export const AdminSettings: React.FC = () => {
                               setConfirmModal({
                                 isOpen: true,
                                 title: 'Reset Password',
-                                message: `Reset ${user.full_name}'s password to the temporary password ${temporaryPassword}? Their current password will stop working immediately.`,
+                                message: `Reset ${user.full_name}'s password? A unique temporary password will be generated and emailed, and their current password will stop working immediately.`,
                                 onConfirm: () => handleResetUserPassword(user.id)
                               });
                             }}
@@ -732,6 +733,7 @@ export const AdminSettings: React.FC = () => {
                   <tr>
                     <th>Status</th>
                     <th>Color</th>
+                    <th>Completion</th>
                     <th style={{ width: '70px', textAlign: 'right' }}>Actions</th>
                   </tr>
                 </thead>
@@ -744,6 +746,18 @@ export const AdminSettings: React.FC = () => {
                           <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: s.color, boxShadow: `0 0 8px ${s.color}50` }} />
                           <span style={{ fontSize: '0.8rem', color: 'var(--text-4)', fontFamily: 'monospace' }}>{s.color}</span>
                         </div>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          onClick={() => void setCompletedStatus(s.id)}
+                          disabled={s.is_completed}
+                          className="secondary-btn"
+                          style={{ padding: '0.35rem 0.55rem', fontSize: '0.7rem' }}
+                        >
+                          <ShieldCheck size={13} />
+                          {s.is_completed ? 'Completed' : 'Mark completed'}
+                        </button>
                       </td>
                       <td style={{ textAlign: 'right' }}>
                         <button 
@@ -768,7 +782,7 @@ export const AdminSettings: React.FC = () => {
                   ))}
                   {statuses.length === 0 && (
                     <tr>
-                      <td colSpan={3} style={{ textAlign: 'center', color: 'var(--text-4)', padding: '3rem' }}>
+                      <td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-4)', padding: '3rem' }}>
                         <Tag size={28} style={{ display: 'block', margin: '0 auto 0.75rem', opacity: 0.1 }} />
                         No statuses defined.
                       </td>

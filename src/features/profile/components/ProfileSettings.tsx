@@ -22,8 +22,8 @@ export const ProfileSettings: React.FC = () => {
       return;
     }
 
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters");
+    if (password.length < 12) {
+      setError('Password must be at least 12 characters');
       return;
     }
 
@@ -32,8 +32,8 @@ export const ProfileSettings: React.FC = () => {
       await updatePassword(password);
       setPassword('');
       setConfirmPassword('');
-    } catch (err: any) {
-      setError(err.message);
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : 'Failed to update password');
     } finally {
       setLoading(false);
     }
@@ -147,7 +147,7 @@ export const ProfileSettings: React.FC = () => {
                   autoComplete="new-password"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  placeholder="Minimum 6 characters"
+                  placeholder="Minimum 12 characters"
                   required
                 />
               </div>

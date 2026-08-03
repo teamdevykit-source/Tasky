@@ -61,11 +61,15 @@ export const AppSelect: React.FC<AppSelectProps> = ({
     const handlePointerDown = (event: MouseEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) {
         setIsOpen(false);
+        setSearchQuery('');
       }
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setIsOpen(false);
+      if (event.key === 'Escape') {
+        setIsOpen(false);
+        setSearchQuery('');
+      }
     };
 
     document.addEventListener('mousedown', handlePointerDown);
@@ -78,12 +82,7 @@ export const AppSelect: React.FC<AppSelectProps> = ({
   }, [isOpen]);
 
   useEffect(() => {
-    if (!isOpen) {
-      setSearchQuery('');
-      return;
-    }
-
-    if (searchable) {
+    if (isOpen && searchable) {
       window.requestAnimationFrame(() => searchInputRef.current?.focus());
     }
   }, [isOpen, searchable]);
@@ -105,7 +104,10 @@ export const AppSelect: React.FC<AppSelectProps> = ({
         type="button"
         className="app-select-trigger"
         disabled={disabled}
-        onClick={() => setIsOpen(open => !open)}
+        onClick={() => {
+          if (isOpen) setSearchQuery('');
+          setIsOpen(open => !open);
+        }}
         style={displayColor ? ({ '--select-accent': displayColor } as React.CSSProperties) : undefined}
       >
         {icon && <span className="app-select-icon">{icon}</span>}

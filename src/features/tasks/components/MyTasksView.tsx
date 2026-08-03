@@ -19,11 +19,15 @@ export const MyTasksView: React.FC<{ onSelectTask: (id: string | null) => void }
   // Filter tasks to ONLY show Self Tasks for the current user
   const mySelfTasks = useMemo(() => {
     if (!currentUser) return [];
-    return tasks.filter(t => t.is_self_task && t.creator_id === currentUser.id);
+    return tasks.filter(task => (
+      task.is_self_task
+      && task.creator_id === currentUser.id
+      && !(task.is_recurring && !task.parent_task_id)
+    ));
   }, [tasks, currentUser]);
 
   const filteredTasks = useMemo(() => {
-    let result = mySelfTasks.filter(t => 
+    const result = mySelfTasks.filter(t =>
       t.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
       (t.description?.toLowerCase().includes(searchQuery.toLowerCase()))
     );

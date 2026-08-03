@@ -333,14 +333,25 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             </>
           )}
           {currentUser.role !== 'Admin' && (
-            <button
-              className={`nav-item ${viewMode === 'tickets' ? 'active' : ''}`}
-              onClick={() => navigate('tickets')}
-              title={isCollapsed ? 'Request a Ticket' : undefined}
-            >
-              <Ticket size={17} />
-              <span>Request a Ticket</span>
-            </button>
+            <>
+              <button
+                className={`nav-item ${viewMode === 'tickets' ? 'active' : ''}`}
+                onClick={() => navigate('tickets')}
+                title={isCollapsed ? 'My Tickets' : undefined}
+              >
+                <Ticket size={17} />
+                <span>My Tickets</span>
+              </button>
+              <button
+                className={`nav-item ${viewMode === 'archive' ? 'active' : ''}`}
+                onClick={() => navigate('archive')}
+                title={isCollapsed ? 'Archive' : undefined}
+              >
+                <Archive size={17} />
+                <span>Archive</span>
+                {archivedTaskCount > 0 && <span className="nav-pill">{archivedTaskCount}</span>}
+              </button>
+            </>
           )}
         </nav>
       </div>

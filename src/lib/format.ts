@@ -23,7 +23,6 @@ export const formatDateTime = (dateStr?: string) => {
   
   return new Intl.DateTimeFormat('en-US', options).format(date);
 };
-
 export const formatTime12Hour = (time?: string | null) => {
   if (!time) return 'TBD';
 
@@ -38,14 +37,4 @@ export const formatTime12Hour = (time?: string | null) => {
     minute: '2-digit',
     hour12: true
   }).format(date);
-};
-
-/**
- * Formats a date for datetime-local input (YYYY-MM-DDTHH:mm)
- */
-export const formatForInput = (dateStr?: string) => {
-  if (!dateStr) return '';
-  const date = new Date(dateStr);
-  if (isNaN(date.getTime())) return '';
-  return date.toISOString().slice(0, 16); 
 };

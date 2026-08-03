@@ -1,11 +1,12 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useStore } from '../../../store/useStore';
-import { canViewTaskByDepartment, getTaskAssigneeIds, isTaskAssignee, type Task } from '../../../lib/supabase';
+import { getTaskAssigneeIds, isTaskAssignee, isTaskComplete, type Task } from '../../../lib/supabase';
 import { TaskCard } from './TaskCard';
 import { Search, Filter, ArrowUpDown, Clock, User as UserIcon, Tag, LayoutGrid, ListChecks, Lock, AlertTriangle, AlertCircle, Plus, Trash2 } from 'lucide-react';
 import { formatDateTime } from '../../../lib/format';
 import { AppSelect } from '../../../components/Shared/AppSelect';
 import { ConfirmationModal } from '../../../components/Shared/ConfirmationModal';
+import { useCurrentTime } from '../../../lib/useCurrentTime';
 
 export const TaskBoard: React.FC<{ 
   onSelectTask: (id: string | null) => void,
@@ -15,37 +16,27 @@ export const TaskBoard: React.FC<{
   const currentUser = useStore(s => s.currentUser);
   const updateTaskStatus = useStore(s => s.updateTaskStatus);
   const profiles = useStore(s => s.profiles);
-  const departments = useStore(s => s.departments);
   const statuses = useStore(s => s.statuses);
   const categories = useStore(s => s.categories);
-  const tasks = useStore(s => s.tasks);
+  useStore(s => s.tasks);
+  const getVisibleTasks = useStore(s => s.getVisibleTasks);
   const deleteTasks = useStore(s => s.deleteTasks);
   const dashboardTaskFilters = useStore(s => s.dashboardTaskFilters);
   const setDashboardTaskFilters = useStore(s => s.setDashboardTaskFilters);
+  const currentTime = useCurrentTime();
   
   // Compute visible tasks based on role
-  const visibleTasks = useMemo(() => {
-    if (!currentUser) return [];
-    return tasks.filter(task => {
-      // If it's a self-task, ONLY the creator can see it, regardless of role.
-      if (task.is_self_task) {
-        return task.creator_id === currentUser.id;
-      }
-      
-      if (currentUser.role === 'Admin') return true;
-      return isTaskAssignee(task, currentUser.id) ||
-             (task.creator_id === currentUser.id) ||
-             (task.observers && task.observers.includes(currentUser.id)) ||
-             canViewTaskByDepartment(task, currentUser, profiles, departments);
-    });
-  }, [tasks, currentUser, profiles, departments]);
+  const visibleTasks = getVisibleTasks()
+    .filter(task => !(task.is_recurring && !task.parent_task_id));
 
   // Filter States
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterStatus, setFilterStatus] = useState<string>('All');
-  const [filterCategory, setFilterCategory] = useState<string>('All');
-  const [filterAssignee, setFilterAssignee] = useState<string>('All');
-  const [filterSelfTasks, setFilterSelfTasks] = useState<'all' | 'only' | 'hide'>('all');
+  const [filterStatus, setFilterStatus] = useState<string>(dashboardTaskFilters?.status || 'All');
+  const [filterCategory, setFilterCategory] = useState<string>(dashboardTaskFilters?.category || 'All');
+  const [filterAssignee, setFilterAssignee] = useState<string>(dashboardTaskFilters?.assignee || 'All');
+  const [filterSelfTasks, setFilterSelfTasks] = useState<'all' | 'only' | 'hide'>(
+    dashboardTaskFilters?.selfTasks || 'all'
+  );
   const [sortBy, setSortBy] = useState<'name' | 'date' | 'status'>('date');
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
@@ -54,20 +45,21 @@ export const TaskBoard: React.FC<{
   useEffect(() => {
     if (!dashboardTaskFilters) return;
 
-    setFilterStatus(dashboardTaskFilters.status || 'All');
-    setFilterCategory(dashboardTaskFilters.category || 'All');
-    setFilterAssignee(dashboardTaskFilters.assignee || 'All');
-    setFilterSelfTasks(dashboardTaskFilters.selfTasks || 'all');
-    setSearchQuery('');
     setDashboardTaskFilters(null);
   }, [dashboardTaskFilters, setDashboardTaskFilters]);
 
   const filteredTasks = useMemo(() => {
-    let result = visibleTasks.filter(t => {
+    const result = visibleTasks.filter(t => {
       const matchesSearch = t.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
                             (t.description?.toLowerCase().includes(searchQuery.toLowerCase()));
-      const matchesStatus = filterStatus === 'All' || t.status === filterStatus;
-      const matchesCategory = filterCategory === 'All' || t.category === filterCategory;
+      const matchesStatus = filterStatus === 'All'
+        || (filterStatus === '__unmapped__'
+          ? !statuses.some(status => status.name === t.status)
+          : t.status === filterStatus);
+      const matchesCategory = filterCategory === 'All'
+        || (filterCategory === '__unmapped__'
+          ? Boolean(t.category && !categories.some(category => category.name === t.category))
+          : t.category === filterCategory);
       const matchesAssignee = filterAssignee === 'All' ||
         (filterAssignee === 'unassigned'
           ? getTaskAssigneeIds(t).length === 0
@@ -85,7 +77,17 @@ export const TaskBoard: React.FC<{
     if (sortBy === 'status') result.sort((a, b) => a.status.localeCompare(b.status));
 
     return result;
-  }, [visibleTasks, searchQuery, filterStatus, filterCategory, filterAssignee, filterSelfTasks, sortBy]);
+  }, [
+    visibleTasks,
+    searchQuery,
+    filterStatus,
+    filterCategory,
+    filterAssignee,
+    filterSelfTasks,
+    sortBy,
+    statuses,
+    categories
+  ]);
 
   const canDeleteTask = React.useCallback((task: Task) => {
     if (!currentUser) return false;
@@ -127,10 +129,6 @@ export const TaskBoard: React.FC<{
     setIsBulkDeleting(false);
   };
 
-  useEffect(() => {
-    setSelectedTaskIds(prev => prev.filter(id => selectableTaskIds.includes(id)));
-  }, [selectableTaskIds]);
-
   if (!currentUser) return null;
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -152,7 +150,7 @@ export const TaskBoard: React.FC<{
 
   const activeFilterCount = [filterStatus, filterCategory, filterAssignee].filter(f => f !== 'All').length;
 
-  const FilterBar = () => (
+  const filterBar = (
     <div style={{ 
       display: 'flex', 
       gap: '0.75rem', 
@@ -300,7 +298,7 @@ export const TaskBoard: React.FC<{
           </div>
         </header>
 
-        <FilterBar />
+        {filterBar}
 
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -423,12 +421,12 @@ export const TaskBoard: React.FC<{
                       <div style={{ 
                         display: 'flex', alignItems: 'center', gap: '0.4rem', 
                         fontSize: '0.8rem', 
-                        color: (new Date(task.end_date || '').getTime() < Date.now() && task.status !== 'Done') ? 'var(--danger)' : 
-                               (new Date(task.end_date || '').getTime() - Date.now() < 3600000 && task.status !== 'Done') ? '#f87171' : 'var(--text-3)',
-                        fontWeight: (new Date(task.end_date || '').getTime() - Date.now() < 3600000 && task.status !== 'Done') ? 600 : 400
+                        color: (new Date(task.end_date || '').getTime() < currentTime && !isTaskComplete(task, statuses)) ? 'var(--danger)' :
+                               (new Date(task.end_date || '').getTime() - currentTime < 3600000 && !isTaskComplete(task, statuses)) ? '#f87171' : 'var(--text-3)',
+                        fontWeight: (new Date(task.end_date || '').getTime() - currentTime < 3600000 && !isTaskComplete(task, statuses)) ? 600 : 400
                       }}>
                         <Clock size={13} style={{ 
-                          color: (new Date(task.end_date || '').getTime() < Date.now() && task.status !== 'Done') ? 'var(--danger)' : 'var(--primary)', 
+                          color: (new Date(task.end_date || '').getTime() < currentTime && !isTaskComplete(task, statuses)) ? 'var(--danger)' : 'var(--primary)',
                           opacity: 0.6 
                         }} />
                         <span style={{ whiteSpace: 'nowrap' }}>
@@ -438,8 +436,8 @@ export const TaskBoard: React.FC<{
                               ? `${formatDateTime(task.start_date)} — ${formatDateTime(task.end_date)}`
                               : formatDateTime(task.start_date || task.end_date)}
                         </span>
-                        {new Date(task.end_date || '').getTime() < Date.now() && task.status !== 'Done' && <AlertTriangle size={12} color="var(--danger)" />}
-                        {(new Date(task.end_date || '').getTime() - Date.now() < 3600000 && new Date(task.end_date || '').getTime() > Date.now() && task.status !== 'Done') && <AlertCircle size={12} color="#f87171" />}
+                        {new Date(task.end_date || '').getTime() < currentTime && !isTaskComplete(task, statuses) && <AlertTriangle size={12} color="var(--danger)" />}
+                        {(new Date(task.end_date || '').getTime() - currentTime < 3600000 && new Date(task.end_date || '').getTime() > currentTime && !isTaskComplete(task, statuses)) && <AlertCircle size={12} color="#f87171" />}
                       </div>
                     </td>
                     <td>
@@ -577,7 +575,7 @@ export const TaskBoard: React.FC<{
         </div>
       </header>
 
-      <FilterBar />
+      {filterBar}
 
       <div className="board-container">
         {statuses.map(column => {
