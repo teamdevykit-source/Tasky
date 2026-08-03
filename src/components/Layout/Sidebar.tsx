@@ -133,7 +133,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           onLostPointerCapture={() => setIsResizing(false)}
           onKeyDown={handleResizeKeyDown}
         />
-        <div>
+        <div
+          className="sidebar-scroll-region"
+          role="region"
+          aria-label="Task navigation"
+          tabIndex={0}
+        >
         {/* Brand & Mobile Close */}
         <div className="sidebar-top-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
           <div className="sidebar-brand" style={{ padding: 0 }}>
@@ -357,7 +362,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       </div>
 
       {/* Bottom Section: Theme + User */}
-      <div style={{ marginTop: 'auto', paddingTop: '1rem' }}>
+      <div className="sidebar-footer">
         {/* Theme Toggle */}
         <button 
           onClick={toggleTheme}

@@ -270,6 +270,45 @@ body {
   overflow: hidden;
 }
 
+.sidebar-scroll-region {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-right: -0.4rem;
+  padding-right: 0.4rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-color: var(--border-strong) transparent;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
+.sidebar-scroll-region::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar-scroll-region::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-scroll-region::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-full);
+}
+
+.sidebar-scroll-region:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
+.sidebar-footer {
+  flex: 0 0 auto;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
 .sidebar::before {
   content: '';
   position: absolute;
@@ -1837,7 +1876,7 @@ textarea:focus-visible {
   .sidebar {
     width: min(86vw, 320px);
     padding: 1rem;
-    overflow-y: auto;
+    overflow-y: hidden;
   }
 
   .sidebar-backdrop {
@@ -3304,7 +3343,7 @@ html {
     padding-top: max(1rem, env(safe-area-inset-top));
     padding-bottom: max(1rem, env(safe-area-inset-bottom));
     overflow-x: hidden;
-    overflow-y: auto;
+    overflow-y: hidden;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
   }
