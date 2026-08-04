@@ -86,8 +86,8 @@ export const RemindersView: React.FC<{
       setAlertData({ message: 'An administrator must configure a completed status first.', type: 'error' });
       return;
     }
-    await updateTaskStatus(taskId, completedStatus.name);
-    dismissReminder(reminderId);
+    const updated = await updateTaskStatus(taskId, completedStatus.name);
+    if (updated) dismissReminder(reminderId);
   };
 
   type ReminderItem = (typeof reminders)[number];

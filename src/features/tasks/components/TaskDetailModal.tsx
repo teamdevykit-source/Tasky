@@ -96,8 +96,8 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
 
   const confirmDelete = async () => {
     try {
-      await deleteTask(task.id);
-      onClose();
+      const deleted = await deleteTask(task.id);
+      if (deleted) onClose();
     } catch (error: unknown) {
       // In case it throws an error instead of just alerting in store
       console.error(error);
@@ -114,7 +114,7 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
       ? updates.day
       : getEditableDay(recurrenceType, recurringTask.recurrence_day);
 
-    await updateTask(recurringTask.id, {
+    const updated = await updateTask(recurringTask.id, {
       recurrence_type: recurrenceType,
       recurrence_time: recurrenceTime,
       recurrence_day: recurrenceType === 'daily' ? null : recurrenceDay,
@@ -125,7 +125,9 @@ export const TaskDetailModal: React.FC<{ taskId: string, onClose: () => void }> 
         recurrenceType === 'daily' ? null : recurrenceDay
       )
     });
-    setAlertData({ message: 'Recurring schedule updated.', type: 'success' });
+    if (updated) {
+      setAlertData({ message: 'Recurring schedule updated.', type: 'success' });
+    }
   };
 
   return (

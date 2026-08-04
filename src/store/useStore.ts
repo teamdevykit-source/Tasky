@@ -14,6 +14,11 @@ import type {
   WorkspaceDepartment
 } from '../lib/supabase';
 import { withTimeout } from '../lib/async';
+import {
+  sanitizeTaskUpdates,
+  WORKSPACE_SELECTS
+} from '../lib/workspaceContract';
+import type { TaskUpdate } from '../lib/workspaceContract';
 
 type Theme = 'light' | 'dark';
 type AdminSettingsTab = 'users' | 'departments' | 'categories' | 'statuses';
@@ -176,8 +181,8 @@ interface StoreState {
   addTask: (
     taskData: Omit<Task, 'id' | 'created_at'>
   ) => Promise<{ success: boolean; data?: Task; error?: unknown }>;
-  updateTask: (taskId: string, updates: Partial<Task>) => Promise<void>;
-  updateTaskStatus: (taskId: string, status: string) => Promise<void>;
+  updateTask: (taskId: string, updates: TaskUpdate) => Promise<boolean>;
+  updateTaskStatus: (taskId: string, status: string) => Promise<boolean>;
   updateUserRole: (userId: string, role: Profile['role']) => Promise<void>;
   updateUserJobTitle: (userId: string, jobTitle: string) => Promise<void>;
   updateUserDepartment: (userId: string, department: Department | null) => Promise<void>;
@@ -210,7 +215,7 @@ interface StoreState {
   setCompletedStatus: (id: string) => Promise<void>;
   deleteStatus: (id: string) => Promise<void>;
   deleteUser: (userId: string) => Promise<void>;
-  deleteTask: (id: string) => Promise<void>;
+  deleteTask: (id: string) => Promise<boolean>;
   deleteTasks: (ids: string[]) => Promise<boolean>;
   restoreTask: (id: string) => Promise<void>;
   permanentlyDeleteTask: (id: string) => Promise<boolean>;
@@ -406,10 +411,16 @@ export const useStore = create<StoreState>((set, get) => ({
     const { currentUser } = get();
     if (!currentUser) return;
 
-    const { error } = await supabase.from('profiles').update(updates).eq('id', currentUser.id);
-    if (error) {
-      set({ alertData: { message: error.message, type: 'error' } });
-      throw error;
+    const { data, error } = await supabase
+      .from('profiles')
+      .update(updates)
+      .eq('id', currentUser.id)
+      .select('id')
+      .maybeSingle();
+    if (error || !data) {
+      const updateError = error || new Error('Your profile was not updated.');
+      set({ alertData: { message: updateError.message, type: 'error' } });
+      throw updateError;
     }
 
     if (updates.full_name) {
@@ -500,12 +511,12 @@ export const useStore = create<StoreState>((set, get) => ({
       const [initialProfiles, tasks, categories, statuses, departments, ticketRequests] =
         await withTimeout(
           Promise.all([
-            fetchPagedRows<ProfileRow>('profiles', '*, user_roles(role)'),
-            fetchPagedRows<Task>('tasks'),
-            fetchPagedRows<Category>('categories'),
-            fetchPagedRows<Status>('statuses'),
-            fetchPagedRows<WorkspaceDepartment>('departments'),
-            fetchPagedRows<TicketRequest>('ticket_requests')
+            fetchPagedRows<ProfileRow>('profiles', WORKSPACE_SELECTS.profiles),
+            fetchPagedRows<Task>('tasks', WORKSPACE_SELECTS.tasks),
+            fetchPagedRows<Category>('categories', WORKSPACE_SELECTS.categories),
+            fetchPagedRows<Status>('statuses', WORKSPACE_SELECTS.statuses),
+            fetchPagedRows<WorkspaceDepartment>('departments', WORKSPACE_SELECTS.departments),
+            fetchPagedRows<TicketRequest>('ticket_requests', WORKSPACE_SELECTS.ticket_requests)
           ]),
           WORKSPACE_LOAD_TIMEOUT_MS,
           'Workspace loading'
@@ -546,7 +557,7 @@ export const useStore = create<StoreState>((set, get) => ({
         );
         if (roleResult.error) throw roleResult.error;
 
-        profiles = await fetchPagedRows<ProfileRow>('profiles', '*, user_roles(role)');
+        profiles = await fetchPagedRows<ProfileRow>('profiles', WORKSPACE_SELECTS.profiles);
         profile = profiles.find(candidate => candidate.id === userId) || null;
       }
 
@@ -791,19 +802,22 @@ export const useStore = create<StoreState>((set, get) => ({
 
       supabase.channel('rt-categories')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, () => {
-          supabase.from('categories').select('*').order('sort_order').then(({ data }) => { if (data) set({ categories: data }); });
+          supabase.from('categories').select(WORKSPACE_SELECTS.categories).order('sort_order')
+            .then(({ data }) => { if (data) set({ categories: data }); });
         })
         .subscribe();
 
       supabase.channel('rt-departments')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'departments' }, () => {
-          supabase.from('departments').select('*').order('sort_order').then(({ data }) => { if (data) set({ departments: data }); });
+          supabase.from('departments').select(WORKSPACE_SELECTS.departments).order('sort_order')
+            .then(({ data }) => { if (data) set({ departments: data }); });
         })
         .subscribe();
 
       supabase.channel('rt-statuses')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'statuses' }, () => {
-          supabase.from('statuses').select('*').order('sort_order').then(({ data }) => { if (data) set({ statuses: data }); });
+          supabase.from('statuses').select(WORKSPACE_SELECTS.statuses).order('sort_order')
+            .then(({ data }) => { if (data) set({ statuses: data }); });
         })
         .subscribe();
 
@@ -855,7 +869,14 @@ export const useStore = create<StoreState>((set, get) => ({
 
   addTask: async (taskData) => {
     try {
-      if (get().currentUser?.role !== 'Admin' && !taskData.is_self_task) {
+      const currentUser = get().currentUser;
+      if (!currentUser) {
+        const error = new Error('Your session is not ready. Please sign in again.');
+        get().setAlertData({ message: error.message, type: 'error' });
+        return { success: false, error };
+      }
+
+      if (currentUser.role !== 'Admin' && !taskData.is_self_task) {
         const error = new Error('Workers can create only private tasks.');
         get().setAlertData({ message: error.message, type: 'error' });
         return { success: false, error };
@@ -866,9 +887,32 @@ export const useStore = create<StoreState>((set, get) => ({
         return { success: false, error: new Error('Tasks must have at least one assignee.') };
       }
 
-      const { data, error } = await supabase.from('tasks').insert([taskData]).select().single();
+      const sessionResult = await withTimeout(
+        supabase.auth.getSession(),
+        SESSION_TIMEOUT_MS,
+        'Task session verification'
+      );
+      if (sessionResult.error) throw sessionResult.error;
+      if (sessionResult.data.session?.user.id !== taskData.creator_id) {
+        const error = new Error('Your session changed. Please sign in again before creating a task.');
+        get().setAlertData({ message: error.message, type: 'error' });
+        return { success: false, error };
+      }
+
+      const insertPayload = Object.fromEntries(
+        Object.entries(taskData).filter(([, value]) => value !== undefined)
+      ) as Omit<Task, 'id' | 'created_at'>;
+      const { data, error } = await supabase
+        .from('tasks')
+        .insert([insertPayload])
+        .select()
+        .single();
       if (error) {
-        get().setAlertData({ message: 'Error adding task: ' + error.message, type: 'error' });
+        console.error('Task creation failed:', error);
+        get().setAlertData({
+          message: 'Error adding task: ' + getUserSafeAlertMessage(error.message),
+          type: 'error'
+        });
         return { success: false, error };
       }
       set((state) => ({ tasks: [...state.tasks, data] }));
@@ -884,51 +928,60 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   updateTask: async (taskId, updates) => {
-    // Optimistic update first for instant UI
-    const prevTasks = get().tasks;
-    const currentTask = prevTasks.find(task => task.id === taskId);
-    const nextTask = currentTask ? { ...currentTask, ...updates } : updates;
+    const currentTask = get().tasks.find(task => task.id === taskId);
+    if (!currentTask) {
+      get().setAlertData({ message: 'This task is no longer available.', type: 'error' });
+      return false;
+    }
 
-    if (currentTask && !hasPublicTaskOwner(nextTask)) {
+    const sanitizedUpdates = sanitizeTaskUpdates(updates);
+    if (Object.keys(sanitizedUpdates).length === 0) return true;
+
+    const nextTask = { ...currentTask, ...sanitizedUpdates };
+
+    if (!hasPublicTaskOwner(nextTask)) {
       get().setAlertData({ message: 'Tasks must have at least one assignee.', type: 'error' });
-      return;
+      return false;
     }
 
     set((state) => ({
-      tasks: state.tasks.map(t => t.id === taskId ? { ...t, ...updates } : t)
+      tasks: state.tasks.map(task => task.id === taskId ? nextTask : task)
     }));
-    const { error } = await supabase.from('tasks').update(updates).eq('id', taskId);
-    if (error) {
-      if (currentTask) {
-        set(state => ({
-          tasks: state.tasks.map(task => task.id === taskId ? currentTask : task)
-        }));
-      }
-      get().setAlertData({ message: "Error updating task: " + error.message, type: 'error' });
-    } else {
-      get().refreshData(); // Sync for non-realtime users
 
+    try {
+      const result = await withTimeout(
+        supabase
+          .from('tasks')
+          .update(sanitizedUpdates)
+          .eq('id', taskId)
+          .select('id')
+          .maybeSingle(),
+        DATA_REQUEST_TIMEOUT_MS,
+        'Updating task'
+      );
+
+      if (result.error) throw result.error;
+      if (!result.data) {
+        throw new Error('The task was not updated. It may have been removed or your access changed.');
+      }
+
+      void get().refreshData();
+      return true;
+    } catch (error: unknown) {
+      set(state => ({
+        tasks: state.tasks.map(task => task.id === taskId ? currentTask : task)
+      }));
+      get().setAlertData({
+        message: `Error updating task: ${getUserSafeAlertMessage(
+          asErrorLike(error).message || 'Please try again.'
+        )}`,
+        type: 'error'
+      });
+      return false;
     }
   },
 
-  updateTaskStatus: async (taskId, status) => {
-    // Optimistic update for instant UI
-    const previousTask = get().tasks.find(task => task.id === taskId);
-    set((state) => ({
-      tasks: state.tasks.map(t => t.id === taskId ? { ...t, status } : t)
-    }));
-    const { error } = await supabase.from('tasks').update({ status }).eq('id', taskId);
-    if (error) {
-      if (previousTask) {
-        set(state => ({
-          tasks: state.tasks.map(task => task.id === taskId ? previousTask : task)
-        }));
-      }
-      get().setAlertData({ message: "Error updating status: " + error.message, type: 'error' });
-    } else {
-      get().refreshData(); // Sync for non-realtime users
-    }
-  },
+  updateTaskStatus: async (taskId, status) => get().updateTask(taskId, { status }),
 
   updateUserRole: async (userId, role) => {
     // Optimistic
@@ -936,15 +989,23 @@ export const useStore = create<StoreState>((set, get) => ({
     set((state) => ({
       profiles: state.profiles.map(p => p.id === userId ? { ...p, role } : p)
     }));
-    const { error } = await supabase.from('user_roles').update({ role }).eq('user_id', userId);
-    if (error) {
+    const { data, error } = await supabase
+      .from('user_roles')
+      .update({ role })
+      .eq('user_id', userId)
+      .select('id')
+      .maybeSingle();
+    if (error || !data) {
       const previousProfile = prevProfiles.find(profile => profile.id === userId);
       if (previousProfile) {
         set(state => ({
           profiles: state.profiles.map(profile => profile.id === userId ? previousProfile : profile)
         }));
       }
-      get().setAlertData({ message: "Error updating role: " + error.message, type: 'error' });
+      get().setAlertData({
+        message: `Error updating role: ${error?.message || 'No workspace role was updated.'}`,
+        type: 'error'
+      });
     }
   },
 
@@ -953,15 +1014,23 @@ export const useStore = create<StoreState>((set, get) => ({
     set((state) => ({
       profiles: state.profiles.map(p => p.id === userId ? { ...p, job_title: jobTitle } : p)
     }));
-    const { error } = await supabase.from('profiles').update({ job_title: jobTitle }).eq('id', userId);
-    if (error) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({ job_title: jobTitle })
+      .eq('id', userId)
+      .select('id')
+      .maybeSingle();
+    if (error || !data) {
       const previousProfile = prevProfiles.find(profile => profile.id === userId);
       if (previousProfile) {
         set(state => ({
           profiles: state.profiles.map(profile => profile.id === userId ? previousProfile : profile)
         }));
       }
-      get().setAlertData({ message: "Error updating job title: " + error.message, type: 'error' });
+      get().setAlertData({
+        message: `Error updating job title: ${error?.message || 'No profile was updated.'}`,
+        type: 'error'
+      });
     }
   },
 
@@ -1030,12 +1099,14 @@ export const useStore = create<StoreState>((set, get) => ({
         : state.currentUser
     }));
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('profiles')
       .update({ department })
-      .eq('id', userId);
+      .eq('id', userId)
+      .select('id')
+      .maybeSingle();
 
-    if (error) {
+    if (error || !data) {
       const previousProfile = prevProfiles.find(profile => profile.id === userId);
       if (previousProfile) {
         set(state => ({
@@ -1043,7 +1114,10 @@ export const useStore = create<StoreState>((set, get) => ({
           currentUser: state.currentUser?.id === userId ? previousProfile : state.currentUser
         }));
       }
-      get().setAlertData({ message: `Error updating department: ${error.message}`, type: 'error' });
+      get().setAlertData({
+        message: `Error updating department: ${error?.message || 'No profile was updated.'}`,
+        type: 'error'
+      });
     } else {
       get().refreshData();
     }
@@ -1184,12 +1258,14 @@ export const useStore = create<StoreState>((set, get) => ({
       ))
     }));
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('departments')
       .update(privileges)
-      .eq('id', id);
+      .eq('id', id)
+      .select('id')
+      .maybeSingle();
 
-    if (error) {
+    if (error || !data) {
       const previousDepartment = prevDepartments.find(department => department.id === id);
       if (previousDepartment) {
         set(state => ({
@@ -1198,7 +1274,10 @@ export const useStore = create<StoreState>((set, get) => ({
           ))
         }));
       }
-      get().setAlertData({ message: `Error updating department privileges: ${error.message}`, type: 'error' });
+      get().setAlertData({
+        message: `Error updating department privileges: ${error?.message || 'No department was updated.'}`,
+        type: 'error'
+      });
       return;
     }
 
@@ -1220,12 +1299,14 @@ export const useStore = create<StoreState>((set, get) => ({
         : state.currentUser
     }));
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('departments')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .select('id')
+      .maybeSingle();
 
-    if (error) {
+    if (error || !data) {
       set(state => ({
         departments: [...state.departments.filter(candidate => candidate.id !== id), department],
         profiles: state.profiles.map(profile => (
@@ -1237,7 +1318,10 @@ export const useStore = create<StoreState>((set, get) => ({
           ? prevProfiles.find(profile => profile.id === state.currentUser?.id) || state.currentUser
           : state.currentUser
       }));
-      get().setAlertData({ message: `Error deleting department: ${error.message}`, type: 'error' });
+      get().setAlertData({
+        message: `Error deleting department: ${error?.message || 'No department was deleted.'}`,
+        type: 'error'
+      });
     } else {
       get().setAlertData({ message: 'Department removed.', type: 'success' });
       get().refreshData();
@@ -1311,7 +1395,7 @@ export const useStore = create<StoreState>((set, get) => ({
   deleteTask: async (id) => {
     const task = get().tasks.find(candidate => candidate.id === id);
     const currentUser = get().currentUser;
-    if (!task || !currentUser) return;
+    if (!task || !currentUser) return false;
 
     const archivedTask: Task = {
       ...task,
@@ -1348,8 +1432,10 @@ export const useStore = create<StoreState>((set, get) => ({
         message: 'The task could not be archived. Please try again.',
         type: 'error'
       });
+      return false;
     } else {
       get().setAlertData({ message: 'Task moved to Archive.', type: 'success' });
+      return true;
     }
   },
 
@@ -1618,10 +1704,18 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   deleteReportSchedule: async (id) => {
-    const { error } = await supabase.from('report_schedules').delete().eq('id', id);
+    const { data, error } = await supabase
+      .from('report_schedules')
+      .delete()
+      .eq('id', id)
+      .select('id')
+      .maybeSingle();
 
-    if (error) {
-      get().setAlertData({ message: `Error deleting schedule: ${error.message}`, type: 'error' });
+    if (error || !data) {
+      get().setAlertData({
+        message: `Error deleting schedule: ${error?.message || 'No report schedule was deleted.'}`,
+        type: 'error'
+      });
       return false;
     }
 
@@ -1633,7 +1727,7 @@ export const useStore = create<StoreState>((set, get) => ({
   fetchReportSchedules: async () => {
     const { data, error } = await supabase
       .from('report_schedules')
-      .select('*')
+      .select(WORKSPACE_SELECTS.report_schedules)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -1688,7 +1782,7 @@ export const useStore = create<StoreState>((set, get) => ({
 
     const { data, error } = await supabase
       .from('ticket_requests')
-      .select('*')
+      .select(WORKSPACE_SELECTS.ticket_requests)
       .order('created_at', { ascending: false });
 
     if (error) {

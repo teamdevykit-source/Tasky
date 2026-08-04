@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test": "vitest run",
+    "check:schema": "node scripts/check-live-schema.mjs",
     "preview": "vite preview",
     "supabase:functions:list": "npx supabase functions list --project-ref xemslalhsxdqgzyfdtqf",
     "supabase:db:push": "npx supabase db push --linked --include-all",

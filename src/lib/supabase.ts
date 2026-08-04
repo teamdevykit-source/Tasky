@@ -85,6 +85,7 @@ export interface Task {
   end_date?: string;
   reminder_at?: string | null;
   reminder_sent_at?: string | null;
+  reminder_claimed_at?: string | null;
   created_at: string;
   deleted_at?: string | null;
   deleted_by?: string | null;

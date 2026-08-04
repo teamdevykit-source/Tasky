@@ -158,10 +158,11 @@ export const RecurringTasksView: React.FC<{ onSelectTask: (id: string | null) =>
       ? updates.day
       : getEditableDay(recurrenceType, task.recurrence_day);
 
-    await updateTask(task.id, {
+    const updated = await updateTask(task.id, {
       recurrence_type: recurrenceType,
       recurrence_time: recurrenceTime,
       recurrence_day: recurrenceType === 'daily' ? null : recurrenceDay,
+      recurrence_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Cairo',
       next_recurrence_at: computeNextRecurrence(
         recurrenceType,
         recurrenceTime,
@@ -169,7 +170,9 @@ export const RecurringTasksView: React.FC<{ onSelectTask: (id: string | null) =>
       )
     });
 
-    setAlertData({ message: 'Recurring schedule updated.', type: 'success' });
+    if (updated) {
+      setAlertData({ message: 'Recurring schedule updated.', type: 'success' });
+    }
   };
 
   const nextDueCount = recurringRows.filter(row => {

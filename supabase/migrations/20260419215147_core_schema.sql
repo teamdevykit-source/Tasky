@@ -78,6 +78,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
   public.tasks
 TO authenticated;
 
+DROP POLICY IF EXISTS "Profiles are readable by all authenticated users" ON public.profiles;
+DROP POLICY IF EXISTS "Users can insert their own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Users can update their own profile" ON public.profiles;
 CREATE POLICY "Profiles are readable by all authenticated users" ON public.profiles
   FOR SELECT TO authenticated USING (true);
 CREATE POLICY "Users can insert their own profile" ON public.profiles
@@ -85,17 +88,24 @@ CREATE POLICY "Users can insert their own profile" ON public.profiles
 CREATE POLICY "Users can update their own profile" ON public.profiles
   FOR UPDATE TO authenticated USING (id = (SELECT auth.uid()));
 
+DROP POLICY IF EXISTS "Everyone can view user_roles" ON public.user_roles;
+DROP POLICY IF EXISTS "Users can insert their own role" ON public.user_roles;
 CREATE POLICY "Everyone can view user_roles" ON public.user_roles
   FOR SELECT TO authenticated USING (true);
 CREATE POLICY "Users can insert their own role" ON public.user_roles
   FOR INSERT TO authenticated
   WITH CHECK (user_id = (SELECT auth.uid()) AND role = 'Worker');
 
+DROP POLICY IF EXISTS "Everyone can view categories" ON public.categories;
+DROP POLICY IF EXISTS "Everyone can view statuses" ON public.statuses;
 CREATE POLICY "Everyone can view categories" ON public.categories
   FOR SELECT TO authenticated USING (true);
 CREATE POLICY "Everyone can view statuses" ON public.statuses
   FOR SELECT TO authenticated USING (true);
 
+DROP POLICY IF EXISTS "View Tasks" ON public.tasks;
+DROP POLICY IF EXISTS "Create Tasks" ON public.tasks;
+DROP POLICY IF EXISTS "Update Tasks" ON public.tasks;
 CREATE POLICY "View Tasks" ON public.tasks
   FOR SELECT TO authenticated
   USING (creator_id = (SELECT auth.uid()) OR (SELECT auth.uid()) = ANY(assignee_ids));

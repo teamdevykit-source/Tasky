@@ -1148,31 +1148,45 @@ SECURITY DEFINER
 SET search_path = ''
 AS $$
 DECLARE
+  p_actor_id ALIAS FOR $1;
+  p_action_key ALIAS FOR $2;
+  p_max_attempts ALIAS FOR $3;
+  p_window_seconds ALIAS FOR $4;
   current_count integer;
 BEGIN
-  IF actor_id IS NULL OR max_attempts < 1 OR window_seconds < 1 THEN
+  IF p_actor_id IS NULL
+    OR p_max_attempts < 1
+    OR p_window_seconds < 1
+  THEN
     RETURN false;
   END IF;
 
   INSERT INTO public.api_rate_limits AS rate_limit (
     actor_id, action_key, window_started_at, attempt_count
   ) VALUES (
-    actor_id, action_key, now(), 1
+    p_actor_id,
+    p_action_key,
+    now(),
+    1
   )
-  ON CONFLICT (actor_id, action_key) DO UPDATE
+  ON CONFLICT ON CONSTRAINT api_rate_limits_pkey DO UPDATE
   SET window_started_at = CASE
-        WHEN rate_limit.window_started_at <= now() - make_interval(secs => window_seconds)
+        WHEN rate_limit.window_started_at <= now() - make_interval(
+          secs => p_window_seconds
+        )
           THEN now()
         ELSE rate_limit.window_started_at
       END,
       attempt_count = CASE
-        WHEN rate_limit.window_started_at <= now() - make_interval(secs => window_seconds)
+        WHEN rate_limit.window_started_at <= now() - make_interval(
+          secs => p_window_seconds
+        )
           THEN 1
         ELSE rate_limit.attempt_count + 1
       END
-  RETURNING attempt_count INTO current_count;
+  RETURNING rate_limit.attempt_count INTO current_count;
 
-  RETURN current_count <= max_attempts;
+  RETURN current_count <= p_max_attempts;
 END;
 $$;
 
