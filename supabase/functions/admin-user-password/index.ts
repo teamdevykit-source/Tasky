@@ -21,7 +21,7 @@ type AdminUserRequest =
   | { action: 'reset_password'; user_id: string };
 
 type MailDelivery = {
-  provider: 'resend' | 'smtp';
+  provider: 'smtp';
   messageId: string | null;
 };
 
@@ -68,35 +68,6 @@ const getSmtpConfig = () => {
   }
 
   return { host, port, user, pass, from, secure };
-};
-
-const sendResendEmail = async (
-  email: string,
-  subject: string,
-  text: string,
-  html: string
-): Promise<MailDelivery> => {
-  const apiKey = Deno.env.get('RESEND_API_KEY');
-  const from = Deno.env.get('MAIL_FROM');
-  if (!apiKey || !from) {
-    throw new Error('Resend mailer is not configured.');
-  }
-
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ from, to: [email], subject, text, html })
-  });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok || !body?.id) {
-    const providerMessage = body?.message || body?.error || `HTTP ${response.status}`;
-    throw new Error(`Resend rejected the email: ${providerMessage}`);
-  }
-
-  return { provider: 'resend', messageId: body.id };
 };
 
 const sendSmtpEmail = async (
@@ -157,14 +128,6 @@ const sendPasswordEmail = async (
       <p style="color:#64748b;font-size:13px">You will be required to choose a private password after signing in.</p>
     </div>
   `;
-
-  if (Deno.env.get('RESEND_API_KEY') && Deno.env.get('MAIL_FROM')) {
-    try {
-      return await sendResendEmail(email, subject, text, html);
-    } catch (error) {
-      console.warn('Resend delivery failed; trying SMTP fallback:', error);
-    }
-  }
 
   return sendSmtpEmail(email, subject, text, html);
 };
