@@ -153,6 +153,7 @@ interface StoreState {
   isCheckingSession: boolean;
   initializationError: string | null;
   isInvitedSession: boolean;
+  isPasswordRecoverySession: boolean;
   isLoaded: boolean;
   profiles: Profile[];
   tasks: Task[];
@@ -311,6 +312,7 @@ export const useStore = create<StoreState>((set, get) => ({
   isCheckingSession: true,
   initializationError: null,
   isInvitedSession: false,
+  isPasswordRecoverySession: false,
   isLoaded: false,
   profiles: [],
   tasks: [],
@@ -409,7 +411,11 @@ export const useStore = create<StoreState>((set, get) => ({
       set({ alertData: { message: error.message, type: 'error' } });
       throw error;
     }
-    set({ alertData: { message: 'Password updated successfully!', type: 'success' } });
+    set({
+      alertData: { message: 'Password updated successfully!', type: 'success' },
+      isInvitedSession: false,
+      isPasswordRecoverySession: false
+    });
   },
   updateProfile: async (updates) => {
     const { currentUser } = get();
@@ -475,6 +481,12 @@ export const useStore = create<StoreState>((set, get) => ({
     const sessionLoaderId = ++_loadingSequence;
     set({ isCheckingSession: true, initializationError: null });
 
+    const { data: recoveryListener } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (event === 'PASSWORD_RECOVERY' && nextSession) {
+        set({ isPasswordRecoverySession: true });
+      }
+    });
+
     let session: Session | null;
     try {
       const sessionResult = await withTimeout(
@@ -485,6 +497,7 @@ export const useStore = create<StoreState>((set, get) => ({
       if (sessionResult.error) throw sessionResult.error;
       session = sessionResult.data.session;
     } catch (error: unknown) {
+      recoveryListener.subscription.unsubscribe();
       if (lifecycleGeneration !== _lifecycleGeneration) return;
       _initialized = false;
       const message = asErrorLike(error).message || 'Unable to initialize your session.';
@@ -495,7 +508,10 @@ export const useStore = create<StoreState>((set, get) => ({
       return;
     }
 
-    if (lifecycleGeneration !== _lifecycleGeneration) return;
+    if (lifecycleGeneration !== _lifecycleGeneration) {
+      recoveryListener.subscription.unsubscribe();
+      return;
+    }
 
     const isInvitationSession = (candidate: Session | null) => {
       const currentParams = new URLSearchParams(window.location.search);
@@ -656,7 +672,10 @@ export const useStore = create<StoreState>((set, get) => ({
       set({ isCheckingSession: false, initializationError: null });
     }
 
-    if (lifecycleGeneration !== _lifecycleGeneration) return;
+    if (lifecycleGeneration !== _lifecycleGeneration) {
+      recoveryListener.subscription.unsubscribe();
+      return;
+    }
 
     const handleAuthChange = async (event: AuthChangeEvent, nextSession: Session | null) => {
       if (lifecycleGeneration !== _lifecycleGeneration) return;
@@ -672,6 +691,7 @@ export const useStore = create<StoreState>((set, get) => ({
           isCheckingSession: false,
           initializationError: null,
           isInvitedSession: false,
+          isPasswordRecoverySession: false,
           isLoaded: false,
           tasks: [],
           archivedTasks: [],
@@ -686,7 +706,12 @@ export const useStore = create<StoreState>((set, get) => ({
         return;
       }
 
-      set({ isInvitedSession: isInvitationSession(nextSession) });
+      set({
+        isInvitedSession: isInvitationSession(nextSession),
+        isPasswordRecoverySession: event === 'PASSWORD_RECOVERY'
+          ? true
+          : get().isPasswordRecoverySession
+      });
 
       if (event === 'TOKEN_REFRESHED') return;
 
@@ -717,6 +742,7 @@ export const useStore = create<StoreState>((set, get) => ({
         void handleAuthChange(event, nextSession);
       });
     });
+    recoveryListener.subscription.unsubscribe();
 
     const refreshInterval = window.setInterval(() => {
       void get().refreshData();
@@ -1116,7 +1142,7 @@ export const useStore = create<StoreState>((set, get) => ({
     if (!user) return false;
 
     try {
-      const { data, error } = await supabase.functions.invoke('admin-user-password', {
+      const { error } = await supabase.functions.invoke('admin-user-password', {
         body: {
           action: 'reset_password',
           user_id: userId
@@ -1125,9 +1151,7 @@ export const useStore = create<StoreState>((set, get) => ({
       if (error) throw error;
 
       get().setAlertData({
-        message: data?.email_sent === false
-          ? `Password reset for ${user.full_name}. Temporary password: ${data?.temporary_password}`
-          : `Password reset and emailed to ${user.full_name}.`,
+        message: `Password reset link emailed to ${user.full_name}.`,
         type: 'success'
       });
       return true;

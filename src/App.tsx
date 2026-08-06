@@ -126,6 +126,7 @@ function App() {
   const initializationError = useStore(s => s.initializationError);
   const retryInitialization = useStore(s => s.retryInitialization);
   const isInvitedSession = useStore(s => s.isInvitedSession);
+  const isPasswordRecoverySession = useStore(s => s.isPasswordRecoverySession);
 
   // Realtime subscriptions handle data sync, so we no longer need the aggressive 
   // hard reload on focus which was causing issues with date pickers and modals.
@@ -207,7 +208,7 @@ function App() {
       </main>
       
       <ScreenErrorBoundary
-        resetKey={`${isCreateModalOpen}:${selectedTaskId || ''}:${isInvitedSession}`}
+        resetKey={`${isCreateModalOpen}:${selectedTaskId || ''}:${isInvitedSession}:${isPasswordRecoverySession}`}
         overlay
       >
         <Suspense fallback={<ModalFallback />}>
@@ -222,7 +223,9 @@ function App() {
             />
           )}
 
-          {isInvitedSession && <CompleteProfileModal />}
+          {(isInvitedSession || isPasswordRecoverySession) && (
+            <CompleteProfileModal mode={isPasswordRecoverySession ? 'recovery' : 'invitation'} />
+          )}
         </Suspense>
       </ScreenErrorBoundary>
 

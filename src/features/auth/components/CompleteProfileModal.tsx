@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useStore } from '../../../store/useStore';
 import { User, Key, ShieldCheck, ArrowRight, AlertCircle, CheckCircle2 } from 'lucide-react';
 
-export const CompleteProfileModal: React.FC = () => {
+export const CompleteProfileModal: React.FC<{ mode: 'invitation' | 'recovery' }> = ({ mode }) => {
   const currentUser = useStore(s => s.currentUser);
   const updateProfile = useStore(s => s.updateProfile);
   const updatePassword = useStore(s => s.updatePassword);
@@ -41,14 +41,10 @@ export const CompleteProfileModal: React.FC = () => {
 
     setLoading(true);
     try {
-      // 1. Update Name
-      await updateProfile({ full_name: fullName });
-      // 2. Set Password
+      if (mode === 'invitation') {
+        await updateProfile({ full_name: fullName });
+      }
       await updatePassword(password);
-      
-      // 3. Clear flag to close modal
-      useStore.setState({ isInvitedSession: false });
-      
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : 'Failed to complete profile');
     } finally {
@@ -89,9 +85,13 @@ export const CompleteProfileModal: React.FC = () => {
             <ShieldCheck size={28} />
           </div>
 
-          <h2 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-1)', marginBottom: '0.6rem' }}>Welcome to El Meraki</h2>
+          <h2 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-1)', marginBottom: '0.6rem' }}>
+            {mode === 'recovery' ? 'Choose a new password' : 'Welcome to El Meraki'}
+          </h2>
           <p style={{ color: 'var(--text-4)', fontSize: '0.95rem', lineHeight: 1.6, marginBottom: '2.5rem' }}>
-            To finalize your account and ensure you can log back in later, please provide your name and choose a secure password.
+            {mode === 'recovery'
+              ? 'Your recovery link is verified. Set a secure password to finish the reset.'
+              : 'To finalize your account, please provide your name and choose a secure password.'}
           </p>
 
           <form onSubmit={handleComplete} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -105,20 +105,22 @@ export const CompleteProfileModal: React.FC = () => {
               </div>
             )}
 
-            <div className="form-group">
-              <label className="form-label" style={{ fontSize: '0.72rem' }}>What is your full name?</label>
-              <div style={{ position: 'relative' }}>
-                <User size={16} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-4)' }} />
-                <input 
-                  type="text" 
-                  value={fullName}
-                  onChange={e => setFullName(e.target.value)}
-                  placeholder="Alexander Hamilton"
-                  style={{ paddingLeft: '2.75rem' }}
-                  required
-                />
+            {mode === 'invitation' && (
+              <div className="form-group">
+                <label className="form-label" style={{ fontSize: '0.72rem' }}>What is your full name?</label>
+                <div style={{ position: 'relative' }}>
+                  <User size={16} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-4)' }} />
+                  <input
+                    type="text"
+                    value={fullName}
+                    onChange={e => setFullName(e.target.value)}
+                    placeholder="Alexander Hamilton"
+                    style={{ paddingLeft: '2.75rem' }}
+                    required
+                  />
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="form-group">
               <label className="form-label" style={{ fontSize: '0.72rem' }}>Choose your password</label>
@@ -159,7 +161,10 @@ export const CompleteProfileModal: React.FC = () => {
               {loading ? (
                 <div className="spinner" />
               ) : (
-                <>Finish Setup <ArrowRight size={18} /></>
+                <>
+                  {mode === 'recovery' ? 'Save New Password' : 'Finish Setup'}
+                  <ArrowRight size={18} />
+                </>
               )}
             </button>
           </form>

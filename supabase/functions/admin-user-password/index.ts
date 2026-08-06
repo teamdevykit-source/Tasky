@@ -105,20 +105,15 @@ const sendSmtpEmail = async (
   return { provider: 'smtp', messageId: info.messageId || null };
 };
 
-const sendPasswordEmail = async (
+const sendInvitationEmail = async (
   email: string,
   appUrl: string,
-  kind: 'invitation' | 'reset',
   temporaryPassword: string
 ) => {
   const safeEmail = escapeHtml(email);
   const safeUrl = escapeHtml(appUrl);
-  const intro = kind === 'invitation'
-    ? 'You have been invited to join the El Meraki workspace.'
-    : 'An administrator reset your El Meraki password.';
-  const subject = kind === 'invitation'
-    ? 'Your El Meraki workspace invitation'
-    : 'Your El Meraki password was reset';
+  const intro = 'You have been invited to join the El Meraki workspace.';
+  const subject = 'Your El Meraki workspace invitation';
   const text = [
     intro,
     '',
@@ -138,6 +133,28 @@ const sendPasswordEmail = async (
       </div>
       <p><a href="${safeUrl}" style="display:inline-block;background:#2563eb;color:white;text-decoration:none;padding:11px 18px;border-radius:8px">Sign in to El Meraki</a></p>
       <p style="color:#64748b;font-size:13px">You will be required to choose a private password after signing in.</p>
+    </div>
+  `;
+
+  return sendSmtpEmail(email, subject, text, html);
+};
+
+const sendRecoveryEmail = async (email: string, actionLink: string) => {
+  const safeLink = escapeHtml(actionLink);
+  const subject = 'Reset your El Meraki password';
+  const text = [
+    'An administrator requested a password reset for your El Meraki account.',
+    '',
+    `Choose a new password: ${actionLink}`,
+    '',
+    'This is a single-use recovery link. If you did not expect this email, contact your administrator.'
+  ].join('\n');
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.6;color:#172033;max-width:560px;margin:auto">
+      <h2 style="color:#2563eb">El Meraki Ops</h2>
+      <p>An administrator requested a password reset for your El Meraki account.</p>
+      <p><a href="${safeLink}" style="display:inline-block;background:#2563eb;color:white;text-decoration:none;padding:11px 18px;border-radius:8px">Choose a new password</a></p>
+      <p style="color:#64748b;font-size:13px">This is a single-use recovery link. If you did not expect this email, contact your administrator.</p>
     </div>
   `;
 
@@ -241,7 +258,7 @@ Deno.serve(async (req) => {
     }
 
     try {
-      const delivery = await sendPasswordEmail(email, appUrl, 'invitation', temporaryPassword);
+      const delivery = await sendInvitationEmail(email, appUrl, temporaryPassword);
       console.log(`Invitation queued via ${delivery.provider}; message id: ${delivery.messageId || 'unavailable'}`);
       return jsonResponse({
         success: true,
@@ -271,32 +288,30 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'User account was not found.' }, 404);
     }
 
-    const temporaryPassword = createTemporaryPassword();
-    const { error: updateError } = await supabase.auth.admin.updateUserById(payload.user_id, {
-      password: temporaryPassword,
-      user_metadata: {
-        ...targetData.user.user_metadata,
-        must_change_password: true
-      }
+    const { data: recoveryData, error: recoveryError } = await supabase.auth.admin.generateLink({
+      type: 'recovery',
+      email: targetData.user.email,
+      options: { redirectTo: appUrl }
     });
-    if (updateError) return jsonResponse({ error: updateError.message }, 400);
-
-    let emailSent = true;
-    let delivery: MailDelivery | null = null;
-    try {
-      delivery = await sendPasswordEmail(targetData.user.email, appUrl, 'reset', temporaryPassword);
-    } catch (error) {
-      emailSent = false;
-      console.error('Password reset email failed:', error);
+    const actionLink = recoveryData?.properties?.action_link;
+    if (recoveryError || !actionLink) {
+      return jsonResponse({ error: recoveryError?.message || 'Unable to create a recovery link.' }, 400);
     }
 
-    return jsonResponse({
-      success: true,
-      email_sent: emailSent,
-      email_provider: delivery?.provider || null,
-      message_id: delivery?.messageId || null,
-      temporary_password: temporaryPassword
-    });
+    try {
+      const delivery = await sendRecoveryEmail(targetData.user.email, actionLink);
+      console.log(`Password recovery queued via ${delivery.provider}; message id: ${delivery.messageId || 'unavailable'}`);
+      return jsonResponse({
+        success: true,
+        email_provider: delivery.provider,
+        message_id: delivery.messageId
+      });
+    } catch (error) {
+      console.error('Password reset email failed:', error);
+      return jsonResponse({
+        error: error instanceof Error ? error.message : 'Unable to send the password recovery email.'
+      }, 502);
+    }
   }
 
   return jsonResponse({ error: 'Unsupported action.' }, 400);

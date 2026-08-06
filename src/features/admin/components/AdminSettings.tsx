@@ -352,11 +352,11 @@ export const AdminSettings: React.FC = () => {
                               setConfirmModal({
                                 isOpen: true,
                                 title: 'Reset Password',
-                                message: `Reset ${user.full_name}'s password? A unique temporary password will be generated and emailed, and their current password will stop working immediately.`,
+                                message: `Email ${user.full_name} a single-use password recovery link? Their current password will remain unchanged until they choose a new one.`,
                                 onConfirm: () => handleResetUserPassword(user.id)
                               });
                             }}
-                            title="Reset to temporary password"
+                            title="Email password recovery link"
                             style={{
                               display: 'inline-flex', alignItems: 'center', gap: '0.35rem',
                               padding: '0.42rem 0.6rem', borderRadius: 'var(--radius-sm)',
