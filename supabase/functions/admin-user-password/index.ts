@@ -77,19 +77,31 @@ const sendSmtpEmail = async (
   html: string
 ): Promise<MailDelivery> => {
   const smtp = getSmtpConfig();
+  const isGmail = /(^|\.)gmail\.com$/i.test(smtp.host);
+  const alignedFrom = isGmail && smtp.user.includes('@')
+    ? { name: 'El Meraki Ops', address: smtp.user }
+    : smtp.from;
   const transporter = nodemailer.createTransport({
     host: smtp.host,
     port: smtp.port,
     secure: smtp.secure,
     auth: { user: smtp.user, pass: smtp.pass }
   });
-  const info = await transporter.sendMail({ from: smtp.from, to: email, subject, text, html });
+  const info = await transporter.sendMail({
+    from: alignedFrom,
+    replyTo: isGmail && smtp.user.includes('@') ? smtp.user : undefined,
+    to: email,
+    subject,
+    text,
+    html
+  });
   const accepted = (info.accepted || []).map(address => String(address).toLowerCase());
   if (!accepted.includes(email.toLowerCase())) {
     const rejected = (info.rejected || []).map(address => String(address)).join(', ');
     throw new Error(rejected ? `SMTP rejected the recipient: ${rejected}` : 'SMTP did not accept the recipient.');
   }
 
+  console.log(`SMTP accepted the message; response: ${info.response || 'unavailable'}`);
   return { provider: 'smtp', messageId: info.messageId || null };
 };
 
