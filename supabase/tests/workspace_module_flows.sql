@@ -45,11 +45,28 @@ BEGIN
     RAISE EXCEPTION 'The audit requires an Admin, a Worker, and a non-completed status.';
   END IF;
 
+  IF EXISTS (
+    SELECT 1 FROM public.user_roles WHERE role NOT IN ('Admin', 'Worker')
+  ) THEN
+    RAISE EXCEPTION 'An unsupported workspace role exists.';
+  END IF;
+
+  IF has_table_privilege('anon', 'public.tasks', 'INSERT')
+    OR has_table_privilege('anon', 'public.tasks', 'TRUNCATE')
+    OR has_table_privilege('authenticated', 'public.tasks', 'TRUNCATE')
+  THEN
+    RAISE EXCEPTION 'Task table grants exceed the application role contract.';
+  END IF;
+
   PERFORM set_config(
     'request.jwt.claims',
     jsonb_build_object('sub', admin_id::text, 'role', 'authenticated')::text,
     true
   );
+
+  IF public.current_user_role() IS DISTINCT FROM 'Admin' THEN
+    RAISE EXCEPTION 'The current Admin role could not be resolved.';
+  END IF;
 
   SELECT id INTO category_id
   FROM public.create_category('__audit_category__', '#64748b');
@@ -167,6 +184,10 @@ BEGIN
     jsonb_build_object('sub', worker_id::text, 'role', 'authenticated')::text,
     true
   );
+
+  IF public.current_user_role() IS DISTINCT FROM 'Worker' THEN
+    RAISE EXCEPTION 'The current Worker role could not be resolved.';
+  END IF;
 
   INSERT INTO public.tasks (
     title,

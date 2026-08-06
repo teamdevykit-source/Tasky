@@ -129,6 +129,10 @@ const fetchPagedRows = async <T>(table: string, select = '*'): Promise<T[]> => {
 };
 
 const getUserSafeAlertMessage = (message: string) => {
+  if (/row-level security policy/i.test(message)) {
+    return 'Your permissions or session changed. Refresh the page and sign in again if needed.';
+  }
+
   const containsDatabaseDetails = [
     /new row for relation/i,
     /violates (check|foreign key|unique|not-null) constraint/i,
@@ -876,7 +880,46 @@ export const useStore = create<StoreState>((set, get) => ({
         return { success: false, error };
       }
 
-      if (currentUser.role !== 'Admin' && !taskData.is_self_task) {
+      const userResult = await withTimeout(
+        supabase.auth.getUser(),
+        SESSION_TIMEOUT_MS,
+        'Task identity verification'
+      );
+      if (userResult.error) throw userResult.error;
+      if (userResult.data.user?.id !== taskData.creator_id) {
+        const error = new Error('Your session changed. Please sign in again before creating a task.');
+        get().setAlertData({ message: error.message, type: 'error' });
+        return { success: false, error };
+      }
+
+      const roleResult = await withTimeout(
+        supabase.rpc('current_user_role'),
+        SESSION_TIMEOUT_MS,
+        'Task permission verification'
+      );
+      if (roleResult.error) throw roleResult.error;
+
+      const authoritativeRole = roleResult.data as UserRole | null;
+      if (authoritativeRole !== 'Admin' && authoritativeRole !== 'Worker') {
+        const error = new Error('Your account does not have an active workspace role.');
+        get().setAlertData({ message: error.message, type: 'error' });
+        return { success: false, error };
+      }
+
+      if (authoritativeRole !== currentUser.role) {
+        set(state => ({
+          currentUser: state.currentUser
+            ? { ...state.currentUser, role: authoritativeRole }
+            : state.currentUser,
+          profiles: state.profiles.map(profile => (
+            profile.id === currentUser.id
+              ? { ...profile, role: authoritativeRole }
+              : profile
+          ))
+        }));
+      }
+
+      if (authoritativeRole !== 'Admin' && !taskData.is_self_task) {
         const error = new Error('Workers can create only private tasks.');
         get().setAlertData({ message: error.message, type: 'error' });
         return { success: false, error };
@@ -887,26 +930,32 @@ export const useStore = create<StoreState>((set, get) => ({
         return { success: false, error: new Error('Tasks must have at least one assignee.') };
       }
 
-      const sessionResult = await withTimeout(
-        supabase.auth.getSession(),
-        SESSION_TIMEOUT_MS,
-        'Task session verification'
-      );
-      if (sessionResult.error) throw sessionResult.error;
-      if (sessionResult.data.session?.user.id !== taskData.creator_id) {
-        const error = new Error('Your session changed. Please sign in again before creating a task.');
-        get().setAlertData({ message: error.message, type: 'error' });
-        return { success: false, error };
-      }
-
       const insertPayload = Object.fromEntries(
         Object.entries(taskData).filter(([, value]) => value !== undefined)
       ) as Omit<Task, 'id' | 'created_at'>;
-      const { data, error } = await supabase
-        .from('tasks')
-        .insert([insertPayload])
-        .select()
-        .single();
+
+      const insertTask = () => withTimeout(
+        supabase
+          .from('tasks')
+          .insert([insertPayload])
+          .select()
+          .single(),
+        DATA_REQUEST_TIMEOUT_MS,
+        'Creating task'
+      );
+
+      let { data, error } = await insertTask();
+      if (error?.code === '42501' || /row-level security policy/i.test(error?.message || '')) {
+        const refreshResult = await withTimeout(
+          supabase.auth.refreshSession(),
+          SESSION_TIMEOUT_MS,
+          'Refreshing task permissions'
+        );
+        if (!refreshResult.error && refreshResult.data.user?.id === taskData.creator_id) {
+          ({ data, error } = await insertTask());
+        }
+      }
+
       if (error) {
         console.error('Task creation failed:', error);
         get().setAlertData({
