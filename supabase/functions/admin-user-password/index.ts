@@ -20,6 +20,11 @@ type AdminUserRequest =
   | { action: 'invite'; email: string }
   | { action: 'reset_password'; user_id: string };
 
+type MailDelivery = {
+  provider: 'resend' | 'smtp';
+  messageId: string | null;
+};
+
 const jsonResponse = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status,
   headers: {
@@ -65,12 +70,41 @@ const getSmtpConfig = () => {
   return { host, port, user, pass, from, secure };
 };
 
-const sendPasswordEmail = async (
+const sendResendEmail = async (
   email: string,
-  appUrl: string,
-  kind: 'invitation' | 'reset',
-  temporaryPassword: string
-) => {
+  subject: string,
+  text: string,
+  html: string
+): Promise<MailDelivery> => {
+  const apiKey = Deno.env.get('RESEND_API_KEY');
+  const from = Deno.env.get('MAIL_FROM');
+  if (!apiKey || !from) {
+    throw new Error('Resend mailer is not configured.');
+  }
+
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ from, to: [email], subject, text, html })
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || !body?.id) {
+    const providerMessage = body?.message || body?.error || `HTTP ${response.status}`;
+    throw new Error(`Resend rejected the email: ${providerMessage}`);
+  }
+
+  return { provider: 'resend', messageId: body.id };
+};
+
+const sendSmtpEmail = async (
+  email: string,
+  subject: string,
+  text: string,
+  html: string
+): Promise<MailDelivery> => {
   const smtp = getSmtpConfig();
   const transporter = nodemailer.createTransport({
     host: smtp.host,
@@ -78,38 +112,61 @@ const sendPasswordEmail = async (
     secure: smtp.secure,
     auth: { user: smtp.user, pass: smtp.pass }
   });
+  const info = await transporter.sendMail({ from: smtp.from, to: email, subject, text, html });
+  const accepted = (info.accepted || []).map(address => String(address).toLowerCase());
+  if (!accepted.includes(email.toLowerCase())) {
+    const rejected = (info.rejected || []).map(address => String(address)).join(', ');
+    throw new Error(rejected ? `SMTP rejected the recipient: ${rejected}` : 'SMTP did not accept the recipient.');
+  }
+
+  return { provider: 'smtp', messageId: info.messageId || null };
+};
+
+const sendPasswordEmail = async (
+  email: string,
+  appUrl: string,
+  kind: 'invitation' | 'reset',
+  temporaryPassword: string
+) => {
   const safeEmail = escapeHtml(email);
   const safeUrl = escapeHtml(appUrl);
   const intro = kind === 'invitation'
     ? 'You have been invited to join the El Meraki workspace.'
     : 'An administrator reset your El Meraki password.';
-
-  await transporter.sendMail({
-    from: smtp.from,
-    to: email,
-    subject: kind === 'invitation' ? 'Your El Meraki workspace invitation' : 'Your El Meraki password was reset',
-    text: [
-      intro,
-      '',
-      `Sign in: ${appUrl}`,
-      `Email: ${email}`,
-      `Temporary password: ${temporaryPassword}`,
-      '',
-      'You will be required to choose a private password after signing in.'
-    ].join('\n'),
-    html: `
-      <div style="font-family:Arial,sans-serif;line-height:1.6;color:#172033;max-width:560px;margin:auto">
-        <h2 style="color:#2563eb">El Meraki Ops</h2>
-        <p>${intro}</p>
-        <div style="background:#f1f5f9;border-radius:12px;padding:18px;margin:20px 0">
-          <div><strong>Email:</strong> ${safeEmail}</div>
-          <div><strong>Temporary password:</strong> ${escapeHtml(temporaryPassword)}</div>
-        </div>
-        <p><a href="${safeUrl}" style="display:inline-block;background:#2563eb;color:white;text-decoration:none;padding:11px 18px;border-radius:8px">Sign in to El Meraki</a></p>
-        <p style="color:#64748b;font-size:13px">You will be required to choose a private password after signing in.</p>
+  const subject = kind === 'invitation'
+    ? 'Your El Meraki workspace invitation'
+    : 'Your El Meraki password was reset';
+  const text = [
+    intro,
+    '',
+    `Sign in: ${appUrl}`,
+    `Email: ${email}`,
+    `Temporary password: ${temporaryPassword}`,
+    '',
+    'You will be required to choose a private password after signing in.'
+  ].join('\n');
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.6;color:#172033;max-width:560px;margin:auto">
+      <h2 style="color:#2563eb">El Meraki Ops</h2>
+      <p>${intro}</p>
+      <div style="background:#f1f5f9;border-radius:12px;padding:18px;margin:20px 0">
+        <div><strong>Email:</strong> ${safeEmail}</div>
+        <div><strong>Temporary password:</strong> ${escapeHtml(temporaryPassword)}</div>
       </div>
-    `
-  });
+      <p><a href="${safeUrl}" style="display:inline-block;background:#2563eb;color:white;text-decoration:none;padding:11px 18px;border-radius:8px">Sign in to El Meraki</a></p>
+      <p style="color:#64748b;font-size:13px">You will be required to choose a private password after signing in.</p>
+    </div>
+  `;
+
+  if (Deno.env.get('RESEND_API_KEY') && Deno.env.get('MAIL_FROM')) {
+    try {
+      return await sendResendEmail(email, subject, text, html);
+    } catch (error) {
+      console.warn('Resend delivery failed; trying SMTP fallback:', error);
+    }
+  }
+
+  return sendSmtpEmail(email, subject, text, html);
 };
 
 Deno.serve(async (req) => {
@@ -177,27 +234,55 @@ Deno.serve(async (req) => {
       }
     });
 
-    if (error || !data.user) {
-      const alreadyExists = /already|registered|exists/i.test(error?.message || '');
-      return jsonResponse({
-        error: alreadyExists ? 'This email already has an account.' : (error?.message || 'Unable to create user.')
-      }, alreadyExists ? 409 : 400);
+    const alreadyExists = /already|registered|exists/i.test(error?.message || '');
+    let invitedUserId = data.user?.id || null;
+    let resent = false;
+
+    if (alreadyExists) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('email', email)
+        .maybeSingle();
+      const existingUser = profile?.id
+        ? await supabase.auth.admin.getUserById(profile.id)
+        : null;
+      const canResend = existingUser?.data.user?.email?.toLowerCase() === email
+        && existingUser.data.user.user_metadata?.must_change_password === true;
+
+      if (!canResend) {
+        return jsonResponse({ error: 'This email already has an active account.' }, 409);
+      }
+
+      const { error: updateError } = await supabase.auth.admin.updateUserById(profile.id, {
+        password: temporaryPassword
+      });
+      if (updateError) return jsonResponse({ error: updateError.message }, 400);
+
+      invitedUserId = profile.id;
+      resent = true;
+    } else if (error || !invitedUserId) {
+      return jsonResponse({ error: error?.message || 'Unable to create user.' }, 400);
     }
 
     try {
-      await sendPasswordEmail(email, appUrl, 'invitation', temporaryPassword);
-    } catch (error) {
-      await supabase.auth.admin.deleteUser(data.user.id);
+      const delivery = await sendPasswordEmail(email, appUrl, 'invitation', temporaryPassword);
+      console.log(`Invitation queued via ${delivery.provider}; message id: ${delivery.messageId || 'unavailable'}`);
       return jsonResponse({
-        error: error instanceof Error ? error.message : 'Unable to send invitation email.'
+        success: true,
+        user_id: invitedUserId,
+        resent,
+        email_provider: delivery.provider,
+        message_id: delivery.messageId,
+        temporary_password: temporaryPassword
+      });
+    } catch (error) {
+      if (!resent && invitedUserId) await supabase.auth.admin.deleteUser(invitedUserId);
+      return jsonResponse({
+        error: error instanceof Error ? error.message : 'Unable to send invitation email.',
+        account_preserved: resent
       }, 502);
     }
-
-    return jsonResponse({
-      success: true,
-      user_id: data.user.id,
-      temporary_password: temporaryPassword
-    });
   }
 
   if (payload.action === 'reset_password') {
@@ -222,8 +307,9 @@ Deno.serve(async (req) => {
     if (updateError) return jsonResponse({ error: updateError.message }, 400);
 
     let emailSent = true;
+    let delivery: MailDelivery | null = null;
     try {
-      await sendPasswordEmail(targetData.user.email, appUrl, 'reset', temporaryPassword);
+      delivery = await sendPasswordEmail(targetData.user.email, appUrl, 'reset', temporaryPassword);
     } catch (error) {
       emailSent = false;
       console.error('Password reset email failed:', error);
@@ -232,6 +318,8 @@ Deno.serve(async (req) => {
     return jsonResponse({
       success: true,
       email_sent: emailSent,
+      email_provider: delivery?.provider || null,
+      message_id: delivery?.messageId || null,
       temporary_password: temporaryPassword
     });
   }

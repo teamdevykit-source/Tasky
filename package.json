@@ -14,6 +14,7 @@
     "supabase:db:push": "npx supabase db push --linked --include-all",
     "supabase:cron:reminders": "npx supabase db query --linked --file configure_task_reminder_cron.sql",
     "supabase:cron:reports": "npx supabase db query --linked --file configure_report_cron.sql",
+    "deploy:admin-user-function": "npx supabase functions deploy admin-user-password --project-ref xemslalhsxdqgzyfdtqf",
     "deploy:reminder-function": "npx supabase functions deploy send-task-reminder --project-ref xemslalhsxdqgzyfdtqf",
     "setup:automatic-mails": "npm run supabase:db:push && npm run deploy:reminder-function && npm run supabase:cron:reminders && npm run supabase:cron:reports",
     "setup:report-email": "npm run setup:automatic-mails"

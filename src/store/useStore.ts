@@ -1038,7 +1038,7 @@ export const useStore = create<StoreState>((set, get) => ({
     const normalizedEmail = email.trim().toLowerCase();
 
     try {
-      const { error } = await supabase.functions.invoke('admin-user-password', {
+      const { data, error } = await supabase.functions.invoke('admin-user-password', {
         body: {
           action: 'invite',
           email: normalizedEmail
@@ -1047,7 +1047,9 @@ export const useStore = create<StoreState>((set, get) => ({
       if (error) throw error;
 
       get().setAlertData({
-        message: `Account created and invitation sent to ${normalizedEmail}.`,
+        message: data?.resent
+          ? `Invitation re-sent to ${normalizedEmail}.`
+          : `Account created and invitation queued for ${normalizedEmail}.`,
         type: 'success'
       });
       await get().refreshData();
